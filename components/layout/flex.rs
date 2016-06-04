@@ -6,8 +6,8 @@
 
 #![deny(unsafe_code)]
 
-use app_units::Au;
-use block::BlockFlow;
+use app_units::{Au, MAX_AU};
+use block::{BlockFlow, ISizeConstraintSolution} ;
 use context::LayoutContext;
 use display_list_builder::{DisplayListBuildState, FlexFlowDisplayListBuilding};
 use euclid::Point2D;
@@ -22,13 +22,16 @@ use gfx_traits::StackingContextId;
 use layout_debug;
 use model::{IntrinsicISizes, MaybeAuto, MinMaxConstraint};
 use script_layout_interface::restyle_damage::{REFLOW, REFLOW_OUT_OF_FLOW};
-use std::cmp::max;
+use model::{specified, specified_or_none};
+use std::cmp::{max, min};
+use std::ops::Range;
 use std::sync::Arc;
-use style::computed_values::flex_direction;
+use style::computed_values::{box_sizing, border_collapse};
 use style::logical_geometry::LogicalSize;
 use style::properties::{ComputedValues, ServoComputedValues};
 use style::servo::SharedStyleContext;
-use style::values::computed::{LengthOrPercentage, LengthOrPercentageOrAuto, LengthOrPercentageOrNone};
+use style::values::computed::{LengthOrPercentage, LengthOrPercentageOrAuto};
+use style::values::computed::{LengthOrPercentageOrAutoOrContent, LengthOrPercentageOrNone};
 
 /// The size of an axis. May be a specified size, a min/max
 /// constraint, or an unlimited size
@@ -69,7 +72,7 @@ impl AxisSize {
 // The logical axises are inline and block, the flex axises are main and cross.
 // When the flex container has flex-direction: column or flex-direction: column-reverse, the main axis
 // should be block. Otherwise, it should be inline.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Mode {
     Inline,
     Block
@@ -84,6 +87,7 @@ struct FlexItem {
     pub flow: FlowRef,
     pub flex_grow: f32,
     pub flex_shrink: f32,
+    pub order: i32,
     pub is_freezed: bool,
     //  this flow is a strut if it has property visibility::collapse.
     pub is_strut: bool
@@ -91,8 +95,15 @@ struct FlexItem {
 
 impl FlexItem {
     pub fn new(flow: FlowRef) -> FlexItem {
-        let flex_grow = flow.as_block().fragment.style().get_position().flex_grow;
-        let flex_shrink = flow.as_block().fragment.style().get_position().flex_shrink;
+        let flex_grow;
+        let flex_shrink;
+        let order;
+        {
+            let style = flow.as_block().fragment.style();
+            flex_grow = style.get_position().flex_grow;
+            flex_shrink = style.get_position().flex_shrink;
+            order = style.get_position().order;
+        }
 
         FlexItem {
             main_size: Au(0),
@@ -102,6 +113,7 @@ impl FlexItem {
             flow: flow,
             flex_grow: flex_grow,
             flex_shrink: flex_shrink,
+            order: order,
             is_freezed: false,
             //TODO(stshine): support visibility:collapse.
             is_strut: false
