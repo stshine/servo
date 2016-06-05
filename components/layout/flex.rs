@@ -242,7 +242,7 @@ impl FlexLine {
                     (item.flex_shrink * item.base_size.0 as f32 / total_scaled, item.min_size)
                 };
                 let mut variation = free_space.scale_by(factor);
-                if variation.to_f32_px().abs() > (end_size - item.main_size).to_f32_px().abs() {
+                if variation.0.abs() > (end_size - item.main_size).0.abs() {
                     variation = end_size - item.main_size;
                     item.main_size = end_size;
                     item.is_freezed = true;
@@ -251,7 +251,7 @@ impl FlexLine {
                     total_grow -= item.flex_grow;
                     total_scaled -= item.flex_shrink * item.base_size.0 as f32;
                 } else {
-                    item.main_size = variation;
+                    item.main_size += variation;
                 }
                 self.free_space -= variation;
             }
@@ -326,7 +326,7 @@ impl FlexFlow {
         let mut margin_num = 0;
 
         let items = &mut self.items[start..];
-        while let Some(mut item) = items.iter_mut().next() {
+        for mut item in items.iter_mut() {
             item.init_sizes(container_size, self.main_mode);
             let style = item.flow.as_block().fragment.style();
             let adjustment = match style.get_position().box_sizing {
@@ -503,10 +503,15 @@ impl FlexFlow {
                 let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
                 let margin = block.fragment.style().logical_margin();
                 block.fragment.compute_border_and_padding(inline_size, border_collapse::T::separate);
+                let auto_len = if line.auto_margins == 0 {
+                    Au(0)
+                } else {
+                    line.free_space / line.auto_margins
+                };
                 let margin_inline_start = MaybeAuto::from_style(margin.inline_start, inline_size)
-                    .specified_or_default(line.free_space / line.auto_margins);
+                    .specified_or_default(auto_len);
                 let margin_inline_end = MaybeAuto::from_style(margin.inline_end, inline_size)
-                    .specified_or_default(line.free_space / line.auto_margins);
+                    .specified_or_default(auto_len);
                 set_inline_size_constraint_solutions(block,
                                                      ISizeConstraintSolution {
                                                          inline_start: Au(0),
@@ -536,6 +541,7 @@ impl FlexFlow {
                         Au(0)
                     };
             }
+            self.lines.push(line);
         }
     }
 
@@ -623,17 +629,20 @@ impl FlexFlow {
                 let margin = block.fragment.style().logical_margin();
                 let block_size = block.base.position.size.block;
 
+                let free_cross = line.cross_size - block_size;
                 let mut auto_margin_num = 0;
+                let mut auto_len = Au(0);
                 if margin.block_start == LengthOrPercentageOrAuto::Auto {
+                    auto_len = free_cross;
                     auto_margin_num += 1;
                 }
                 if margin.block_end == LengthOrPercentageOrAuto::Auto {
+                    auto_len = free_cross / 2;
                     auto_margin_num += 1;
                 }
 
-                let free_cross = line.cross_size - block_size;
                 let margin_block_start = MaybeAuto::from_style(margin.block_start, inline_size)
-                    .specified_or_default(free_cross / auto_margin_num);
+                    .specified_or_default(auto_len);
                 // let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
                 //     .specified_or_default(free_cross / auto_margin_num);
                 let self_align = block.fragment.style().get_position().align_self;
