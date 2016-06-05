@@ -185,6 +185,74 @@ impl FlexItem {
     }
 }
 
+#[derive(Debug)]
+struct FlexLine {
+    pub range: Range<usize>,
+    pub free_space: Au,
+    pub auto_margins: i32,
+    pub cross_size: Au,
+}
+
+impl FlexLine {
+    pub fn new(range: Range<usize>, free_space: Au, auto_margins: i32) -> FlexLine {
+        FlexLine {
+            range: range,
+            auto_margins: auto_margins,
+            free_space: free_space,
+            cross_size: Au(0)
+        }
+    }
+
+    pub fn flex_resolve(&mut self, items: &mut [FlexItem], collapse: bool) {
+        let mut total_grow = 0.0;
+        let mut total_shrink = 0.0;
+        let mut total_scaled = 0.0;
+        let mut active_num = 0;
+        for item in items.iter_mut().filter(|i| !(i.is_strut && collapse)) {
+            item.main_size = max(item.min_size, min(item.base_size, item.max_size));
+            if item.main_size != item.base_size
+                || (self.free_space > Au(0) && item.flex_grow == 0.0)
+                || (self.free_space < Au(0) && item.flex_shrink == 0.0) {
+                    item.is_freezed = true;
+                } else {
+                    item.is_freezed = false;
+                    total_grow += item.flex_grow;
+                    total_shrink += item.flex_shrink;
+                    total_scaled += item.flex_shrink * item.base_size.0 as f32;
+                    active_num += 1;
+                }
+        }
+
+        let initial_free_space = self.free_space;
+        while self.free_space != Au(0) || active_num > 0 {
+            self.free_space =
+                if self.free_space > Au(0) {
+                    min(initial_free_space.scale_by(total_grow), self.free_space)
+                } else {
+                    max(initial_free_space.scale_by(total_shrink), self.free_space)
+                };
+
+            let free_space = self.free_space;
+            for item in items.iter_mut().filter(|i| !i.is_freezed).filter(|i| !(i.is_strut && collapse)) {
+                let (factor, end_size) = if self.free_space > Au(0) {
+                    (item.flex_grow / total_grow, item.max_size)
+                } else {
+                    (item.flex_shrink * item.base_size.0 as f32 / total_scaled, item.min_size)
+                };
+                let mut variation = free_space.scale_by(factor);
+                if variation.to_f32_px().abs() > (end_size - item.main_size).to_f32_px().abs() {
+                    variation = end_size - item.main_size;
+                    item.main_size = end_size;
+                    item.is_freezed = true;
+                    active_num -= 1;
+                    total_shrink -= item.flex_shrink;
+                    total_grow -= item.flex_grow;
+                    total_scaled -= item.flex_shrink * item.base_size.0 as f32;
+                } else {
+                    item.main_size = variation;
+                }
+                self.free_space -= variation;
+            }
         }
     }
 }
