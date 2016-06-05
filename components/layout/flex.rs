@@ -104,7 +104,7 @@ impl FlexItem {
             flex_grow = style.get_position().flex_grow;
             flex_shrink = style.get_position().flex_shrink;
             order = style.get_position().order;
-            //TODO(stshine): for item with visibility:collapse, set is_strut to false.
+            //TODO(stshine): for item with visibility:collapse, set is_strut to true.
         }
 
         FlexItem {
