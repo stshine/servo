@@ -104,6 +104,7 @@ impl FlexItem {
             flex_grow = style.get_position().flex_grow;
             flex_shrink = style.get_position().flex_shrink;
             order = style.get_position().order;
+            //TODO(stshine): for item with visibility:collapse, set is_strut to false.
         }
 
         FlexItem {
@@ -116,7 +117,6 @@ impl FlexItem {
             flex_shrink: flex_shrink,
             order: order,
             is_freezed: false,
-            //TODO(stshine): support visibility:collapse.
             is_strut: false
         }
     }
@@ -186,6 +186,7 @@ impl FlexItem {
     }
 }
 
+//TODO(stshine): More fields may be required to handle collapsed items and baseline alignment.
 #[derive(Debug)]
 struct FlexLine {
     pub range: Range<usize>,
@@ -636,11 +637,11 @@ impl FlexFlow {
                 // let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
                 //     .specified_or_default(free_cross / auto_margin_num);
                 let self_align = block.fragment.style().get_position().align_self;
-                if auto_margin_num > 0 {
+                if auto_margin_num == 0 {
+                    //TODO(stshine): support baseline alignment.
                     let flex_cross = match self_align {
                         align_self::T::flex_end => free_cross,
                         align_self::T::center => free_cross / 2,
-                        //TODO(stshine): support baseline alignment.
                         _ => Au(0),
                     };
                     block.base.position.start.b = cur_b + flex_cross;
