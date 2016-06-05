@@ -27,6 +27,7 @@ use std::cmp::{max, min};
 use std::ops::Range;
 use std::sync::Arc;
 use style::computed_values::{box_sizing, border_collapse};
+use style::computed_values::{flex_direction, flex_wrap, justify_content, align_content, align_self};
 use style::logical_geometry::LogicalSize;
 use style::properties::{ComputedValues, ServoComputedValues};
 use style::servo::SharedStyleContext;
@@ -451,9 +452,6 @@ impl FlexFlow {
         }
     }
 
-    // TODO(zentner): This function should actually flex elements!
-    // Currently, this is the core of InlineFlow::propagate_assigned_inline_size_to_children() with
-    // fragment logic stripped out.
     fn inline_mode_assign_inline_sizes(&mut self,
                                        _shared_context: &SharedStyleContext,
                                        inline_start_content_edge: Au,
@@ -476,30 +474,67 @@ impl FlexFlow {
             AxisSize::Infinite => content_inline_size,
         };
 
-        let even_content_inline_size = inline_size / child_count;
-
         let container_mode = self.block_flow.base.block_container_writing_mode;
         self.block_flow.base.position.size.inline = inline_size;
 
-        let block_container_explicit_block_size = self.block_flow.base.block_container_explicit_block_size;
-        let mut inline_child_start = if !self.is_reverse {
-            inline_start_content_edge
-        } else {
-            self.block_flow.fragment.border_box.size.inline
-        };
-        for kid in &mut self.items {
-            let base = flow::mut_base(flow_ref::deref_mut(&mut kid.flow));
+        while let Some(mut line) = self.get_flex_line(Some(inline_size)) {
+            let mut items = &mut self.items[line.range.clone()];
+            line.flex_resolve(&mut items, false);
+            //TODO(stshine): if this flex line contain children that have
+            //property visibility:hidden, exclude them and resolve again.
 
-            base.block_container_inline_size = even_content_inline_size;
-            base.block_container_writing_mode = container_mode;
-            base.block_container_explicit_block_size = block_container_explicit_block_size;
-            if !self.is_reverse {
-              base.position.start.i = inline_child_start;
-              inline_child_start = inline_child_start + even_content_inline_size;
-            } else {
-              base.position.start.i = inline_child_start - base.intrinsic_inline_sizes.preferred_inline_size;
-              inline_child_start = inline_child_start - even_content_inline_size;
-            };
+            let len = items.len() as i32;
+            let mut inline_position = inline_start_content_edge;
+            match self.block_flow.fragment.style().get_position().justify_content {
+                justify_content::T::center => {
+                    inline_position += line.free_space / 2 ;
+                }
+                justify_content::T::space_around => {
+                    inline_position += line.free_space /(len*2);
+                }
+                justify_content::T::flex_end => {
+                    inline_position += line.free_space;
+                }
+                _ => {}
+            }
+
+            for item in items.iter_mut() {
+                let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
+                let margin = block.fragment.style().logical_margin();
+                block.fragment.compute_border_and_padding(inline_size, border_collapse::T::separate);
+                let margin_inline_start = MaybeAuto::from_style(margin.inline_start, inline_size)
+                    .specified_or_default(line.free_space / line.auto_margins);
+                let margin_inline_end = MaybeAuto::from_style(margin.inline_end, inline_size)
+                    .specified_or_default(line.free_space / line.auto_margins);
+                set_inline_size_constraint_solutions(block,
+                                                     ISizeConstraintSolution {
+                                                         inline_start: Au(0),
+                                                         inline_size: item.main_size,
+                                                         margin_inline_start: margin_inline_start,
+                                                         margin_inline_end: margin_inline_end
+                                                     });
+                block.base.block_container_writing_mode = container_mode;
+                if !self.is_reverse {
+                    block.base.position.start.i = inline_position;
+                } else {
+                    block.base.position.start.i =
+                        _inline_end_content_edge - inline_position - block.base.position.size.inline;
+                };
+                inline_position += block.base.position.size.inline +
+                    if line.free_space != Au(0) && line.auto_margins == 0 {
+                        match self.block_flow.fragment.style().get_position().justify_content {
+                            justify_content::T::space_between => {
+                                line.free_space / (len-1)
+                            },
+                            justify_content::T::space_around => {
+                                line.free_space /(len*2)
+                            },
+                            _ => {Au(0)},
+                        }
+                    } else {
+                        Au(0)
+                    };
+            }
         }
     }
 
