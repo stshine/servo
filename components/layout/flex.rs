@@ -269,10 +269,16 @@ pub struct FlexFlow {
     available_main_size: AxisSize,
     /// The available cross axis size
     available_cross_size: AxisSize,
+    /// List of flex lines in the container.
+    lines: Vec<FlexLine>,
     /// List of flex-items that belong to this flex-container
     items: Vec<FlexItem>,
     /// True if the flex-direction is *-reversed
-    is_reverse: bool
+    is_reverse: bool,
+    /// True if this flex container can be multiline.
+    is_wrappable: bool,
+    /// True if the cross direction is reversed.
+    cross_reverse: bool
 }
 
 impl FlexFlow {
@@ -285,14 +291,24 @@ impl FlexFlow {
             flex_direction::T::column         => (Mode::Block, false),
             flex_direction::T::column_reverse => (Mode::Block, true),
         };
-
+        let (is_wrappable, cross_reverse) = match fragment.style.get_position().flex_wrap {
+            flex_wrap::T::nowrap              => (false, false),
+            flex_wrap::T::wrap                => (true, false),
+            flex_wrap::T::wrap_reverse        => (true, true),
+        };
         FlexFlow {
             block_flow: BlockFlow::from_fragment(fragment, flotation),
             main_mode: main_mode,
             available_main_size: AxisSize::Infinite,
             available_cross_size: AxisSize::Infinite,
+            lines: Vec::new(),
             items: Vec::new(),
-            is_reverse: is_reverse
+            is_reverse: is_reverse,
+            is_wrappable: is_wrappable,
+            cross_reverse: cross_reverse
+        }
+    }
+
         }
     }
 
