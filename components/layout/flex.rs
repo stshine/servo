@@ -558,63 +558,108 @@ impl FlexFlow {
         self.block_flow.assign_block_size(layout_context)
     }
 
-    // TODO(zentner): This function should actually flex elements!
-    // Currently, this is the core of TableRowFlow::assign_block_size() with
-    // float related logic stripped out.
     fn inline_mode_assign_block_size<'a>(&mut self, layout_context: &'a LayoutContext<'a>) {
         let _scope = layout_debug_scope!("flex::inline_mode_assign_block_size");
 
-        let mut max_block_size = Au(0);
-        let thread_id = self.block_flow.base.thread_id;
-        for kid in self.block_flow.base.child_iter_mut() {
-            kid.assign_block_size_for_inorder_child_if_necessary(layout_context, thread_id);
-
-            {
-                let child_fragment = &mut kid.as_mut_block().fragment;
-                // TODO: Percentage block-size
-                let child_specified_block_size =
-                    MaybeAuto::from_style(child_fragment.style().content_block_size(),
-                                          Au(0)).specified_or_zero();
-                max_block_size =
-                    max(max_block_size,
-                        child_specified_block_size +
-                        child_fragment.border_padding.block_start_end());
-            }
-            let child_node = flow::mut_base(kid);
-            child_node.position.start.b = Au(0);
-            max_block_size = max(max_block_size, child_node.position.size.block);
-        }
-
-        let mut block_size = max_block_size;
-        // TODO: Percentage block-size
-
-        block_size = match MaybeAuto::from_style(self.block_flow
-                                                     .fragment
-                                                     .style()
-                                                     .content_block_size(),
-                                                 Au(0)) {
-            MaybeAuto::Auto => block_size,
-            MaybeAuto::Specified(value) => max(value, block_size),
+        let padding_and_borders = self.block_flow.fragment.border_padding.inline_start_end();
+        let content_inline_size = self.block_flow.fragment.border_box.size.inline - padding_and_borders;
+        let inline_size = match self.available_main_size {
+            AxisSize::Definite(length) => length,
+            AxisSize::MinMax(ref constraint) => constraint.clamp(content_inline_size),
+            AxisSize::Infinite => content_inline_size,
         };
 
-        // Assign the block-size of own fragment
-        let mut position = self.block_flow.fragment.border_box;
-        position.size.block = block_size;
-        self.block_flow.fragment.border_box = position;
-        self.block_flow.base.position.size.block = block_size;
+        let mut cur_b = self.block_flow.fragment.border_padding.block_start;
 
-        // Assign the block-size of kid fragments, which is the same value as own block-size.
-        for kid in self.block_flow.base.child_iter_mut() {
-            {
-                let kid_fragment = &mut kid.as_mut_block().fragment;
-                let mut position = kid_fragment.border_box;
-                position.size.block = block_size;
-                kid_fragment.border_box = position;
+        let line_num = self.lines.len() as i32;
+        let line_align = self.block_flow.fragment.style().get_position().align_content;
+        let mut total_cross_size = Au(0);
+        let mut line_interval = Au(0);
+
+        for line in self.lines.iter_mut() {
+            for item in &self.items[line.range.clone()] {
+                let margin = item.flow.as_block().fragment.style().logical_margin();
+                line.cross_size = max(line.cross_size,
+                                      item.flow.as_block().base.position.size.block +
+                                      MaybeAuto::from_style(margin.block_start, inline_size).specified_or_zero() +
+                                      MaybeAuto::from_style(margin.block_end, inline_size).specified_or_zero());
+            }
+            total_cross_size += line.cross_size;
+        }
+
+        if let Some(free_space) = self.block_flow.explicit_block_containing_size(layout_context)
+            .and_then(|i| if i - total_cross_size > Au(0) {Some(i - total_cross_size)} else { None }) {
+                match line_align {
+                    align_content::T::center=> {
+                        cur_b += free_space / 2 ;
+                    }
+                    align_content::T::space_around => {
+                        cur_b += free_space /(line_num*2);
+                    }
+                    align_content::T::flex_end => {
+                        cur_b += free_space;
+                    }
+                    _ => {}
+                }
+
+                if line_align == align_content::T::stretch {
+                    for line in self.lines.iter_mut() {
+                        line.cross_size += free_space / line_num;
+                    }
+                } else {
+                    line_interval = match line_align {
+                        align_content::T::space_between => { free_space/(line_num-1) },
+                        align_content::T::space_around => { free_space/(line_num*2)  },
+                        _ => { Au(0) },
+                    };
+                }
+                total_cross_size += free_space;
             }
 
-            // Assign the child's block size.
-            flow::mut_base(kid).position.size.block = block_size
+        for line in &self.lines {
+            for mut item in self.items[line.range.clone()].iter_mut() {
+                let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
+                let margin = block.fragment.style().logical_margin();
+                let block_size = block.base.position.size.block;
+
+                let mut auto_margin_num = 0;
+                if margin.block_start == LengthOrPercentageOrAuto::Auto {
+                    auto_margin_num += 1;
+                }
+                if margin.block_end == LengthOrPercentageOrAuto::Auto {
+                    auto_margin_num += 1;
+                }
+
+                let free_cross = line.cross_size - block_size;
+                let margin_block_start = MaybeAuto::from_style(margin.block_start, inline_size)
+                    .specified_or_default(free_cross / auto_margin_num);
+                // let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
+                //     .specified_or_default(free_cross / auto_margin_num);
+                let self_align = block.fragment.style().get_position().align_self;
+                if auto_margin_num > 0 {
+                    let flex_cross = match self_align {
+                        align_self::T::flex_end => free_cross,
+                        align_self::T::center => free_cross / 2,
+                        //TODO(stshine): support baseline alignment.
+                        _ => Au(0),
+                    };
+                    block.base.position.start.b = cur_b + flex_cross;
+                } else {
+                    block.base.position.start.b = cur_b + margin_block_start;
+                }
+                if self_align == align_self::T::stretch {
+                    block.base.position.size.block = line.cross_size;
+                    let ref mut kid_fragment = block.fragment;
+                    let mut position = kid_fragment.border_box;
+                    position.size.block = line.cross_size;
+                    kid_fragment.border_box = position;
+                }
+            }
+            cur_b += line_interval + line.cross_size;
         }
+        self.block_flow.fragment.border_box.size.block = total_cross_size;
+        self.block_flow.base.position.size.block = total_cross_size;
+        self.block_flow.assign_block_size(layout_context);
     }
 }
 
