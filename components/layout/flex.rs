@@ -797,3 +797,47 @@ impl Flow for FlexFlow {
         self.block_flow.mutate_fragments(mutator);
     }
 }
+
+// This function is copied from block::ISizeAndMarginsComputer.
+fn set_inline_size_constraint_solutions(block: &mut BlockFlow,
+                                        solution: ISizeConstraintSolution) {
+    let inline_size;
+    let extra_inline_size_from_margin;
+    {
+        let block_mode = block.base.writing_mode;
+
+        // FIXME (mbrubeck): Get correct containing block for positioned blocks?
+        let container_mode = block.base.block_container_writing_mode;
+        let container_size = block.base.block_container_inline_size;
+
+        let fragment = block.fragment();
+        fragment.margin.inline_start = solution.margin_inline_start;
+        fragment.margin.inline_end = solution.margin_inline_end;
+
+        // The associated fragment has the border box of this flow.
+        inline_size = solution.inline_size + fragment.border_padding.inline_start_end();
+        fragment.border_box.size.inline = inline_size;
+
+        // Start border edge.
+        // FIXME (mbrubeck): Handle vertical writing modes.
+        fragment.border_box.start.i =
+            if container_mode.is_bidi_ltr() == block_mode.is_bidi_ltr() {
+                fragment.margin.inline_start
+            } else {
+                // The parent's "start" direction is the child's "end" direction.
+                container_size - inline_size - fragment.margin.inline_end
+            };
+
+        // To calculate the total size of this block, we also need to account for any
+        // additional size contribution from positive margins. Negative margins means the block
+        // isn't made larger at all by the margin.
+        extra_inline_size_from_margin = max(Au(0), fragment.margin.inline_start) +
+            max(Au(0), fragment.margin.inline_end);
+    }
+
+    // We also resize the block itself, to ensure that overflow is not calculated
+    // as the inline-size of our parent. We might be smaller and we might be larger if we
+    // overflow.
+    flow::mut_base(block).position.size.inline = inline_size + extra_inline_size_from_margin;
+}
+
