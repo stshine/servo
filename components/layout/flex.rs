@@ -309,7 +309,47 @@ impl FlexFlow {
         }
     }
 
+    fn get_flex_line(&mut self, container_size: Option<Au>) -> Option<FlexLine> {
+        let line_size = container_size.unwrap_or(MAX_AU);
+        let start = if self.lines.len() == 0 {
+            0
+        } else {
+            self.lines[self.lines.len()-1].range.end
+        };
+        if start == self.items.len() {
+            return None;
         }
+        let mut end = start;
+        let mut total_line_size = Au(0);
+        let mut margin_num = 0;
+
+        let items = &mut self.items[start..];
+        while let Some(mut item) = items.iter_mut().next() {
+            item.init_sizes(container_size, self.main_mode);
+            let style = item.flow.as_block().fragment.style();
+            let adjustment = match style.get_position().box_sizing {
+                box_sizing::T::border_box => {
+                    let margin = style.logical_margin();
+                    if margin.inline_start == LengthOrPercentageOrAuto::Auto { margin_num += 1};
+                    if margin.inline_end == LengthOrPercentageOrAuto::Auto { margin_num += 1};
+                    (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
+                     MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
+                }
+                box_sizing::T::content_box => item.flow.as_block().fragment.surrounding_intrinsic_inline_size(),
+            };
+
+            let outer_main_size = adjustment + max(item.min_size, min(item.base_size, item.max_size));
+
+            if total_line_size + outer_main_size > line_size && end > start  && self.is_wrappable {
+                break;
+            }
+
+            total_line_size += outer_main_size;
+            end += 1;
+        }
+
+        let line = FlexLine::new(start..end, container_size.map_or(Au(0), |i| i - total_line_size), margin_num);
+        Some(line)
     }
 
     // TODO(zentner): This function should use flex-basis.
