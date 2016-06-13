@@ -79,6 +79,29 @@ enum Mode {
     Block
 }
 
+fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
+                   content_size: LengthOrPercentageOrAuto,
+                   containing_length: Option<Au>) -> MaybeAuto {
+    match (flex_basis, containing_length) {
+        (LengthOrPercentageOrAutoOrContent::Length(length), _) =>
+            MaybeAuto::Specified(length),
+        (LengthOrPercentageOrAutoOrContent::Percentage(percent), Some(size)) =>
+            MaybeAuto::Specified(size.scale_by(percent)),
+        (LengthOrPercentageOrAutoOrContent::Percentage(_), None) => MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Calc(calc), Some(size)) =>
+            MaybeAuto::Specified(calc.length() + size.scale_by(calc.percentage())),
+        (LengthOrPercentageOrAutoOrContent::Calc(_), None) => MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Content, _) => MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Auto, Some(size)) => MaybeAuto::from_style(content_size, size),
+        (LengthOrPercentageOrAutoOrContent::Auto, None) =>
+            if let LengthOrPercentageOrAuto::Length(l) = content_size {
+                MaybeAuto::Specified(l)
+            } else {
+                MaybeAuto::Auto
+            }
+    }
+}
+
 #[derive(Debug)]
 struct FlexItem {
     pub main_size: Au,
@@ -104,7 +127,7 @@ impl FlexItem {
             flex_grow = style.get_position().flex_grow;
             flex_shrink = style.get_position().flex_shrink;
             order = style.get_position().order;
-            //TODO(stshine): for item with visibility:collapse, set is_strut to true.
+            // TODO(stshine): for item with visibility:collapse, set is_strut to true.
         }
 
         FlexItem {
@@ -121,72 +144,85 @@ impl FlexItem {
         }
     }
 
-    // Currently this function only works for Mode::Inline.
-    // for othrogonal flow we may need the layout the children first.
-    pub fn flex_base_size(&self, containing_length: Option<Au>, mode: Mode) -> Au {
-        let containing_length = containing_length.unwrap();
-        let style = self.flow.as_block().fragment.style();
-        let flex_basis: LengthOrPercentageOrAutoOrContent = style.get_position().flex_basis;
-        let adjust_size = match style.get_position().box_sizing {
-            box_sizing::T::border_box => {
-                let margin = style.logical_margin();
-                (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
-                 MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
+    pub fn init_sizes(&mut self, containing_length: Au, mode: Mode) {
+        let block = self.flow.as_block();
+        let style = block.fragment.style();
+        match mode {
+            // TODO(stshine): the definition of min-{width, height} in style component
+            // should change to LengthOrPercentageOrAuto for automatic implied minimal size.
+            // https://drafts.csswg.org/css-flexbox-1/#min-size-auto
+            Mode::Inline => {
+                let basis = from_flex_basis(style.get_position().flex_basis,
+                                            style.content_inline_size(), Some(containing_length));
+                let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size;
+                self.base_size = basis.specified_or_default(content_size);
+                self.max_size = specified_or_none(style.max_inline_size(), containing_length).unwrap_or(MAX_AU);
+                self.min_size = specified(style.min_inline_size(), containing_length);
+            },
+            Mode::Block => {
+                let basis = from_flex_basis(style.get_position().flex_basis,
+                                            style.content_block_size(), Some(containing_length));
+                // This method should be called in assign_block_size() pass that the block is already layouted.
+                let content_size = block.base.position.size.block;
+                self.base_size = basis.specified_or_default(content_size);
+                self.max_size = specified_or_none(style.max_block_size(), containing_length).unwrap_or(MAX_AU);
+                self.min_size = specified(style.min_block_size(), containing_length);
             }
-            box_sizing::T::content_box => self.flow.as_block().fragment.surrounding_intrinsic_inline_size(),
-        };
-        let content_size = self.flow.as_block().base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
-        match flex_basis {
-            LengthOrPercentageOrAutoOrContent::Length(length) => length,
-            LengthOrPercentageOrAutoOrContent::Percentage(percent) => containing_length.scale_by(percent),
-            LengthOrPercentageOrAutoOrContent::Calc(calc) =>
-                containing_length.scale_by(calc.percentage()) + calc.length(),
-            LengthOrPercentageOrAutoOrContent::Content =>  content_size,
-            LengthOrPercentageOrAutoOrContent::Auto =>
-                MaybeAuto::from_style(style.content_inline_size(), containing_length)
-                .specified_or_default(content_size)
         }
     }
 
-    // TODO(stshine): the definition of min-{width, height} in style components
-    // should change to LengthOrPercentageOrAuto for automatic implied minimal size.
-    // https://drafts.csswg.org/css-flexbox-1/#min-size-auto
-    pub fn min_main_size(&self, containing_length: Option<Au>, mode: Mode) -> Au {
-        let style = self.flow.as_block().fragment.style();
+    pub fn outer_main_size(&mut self, containing_length: Au, mode: Mode) -> Au {
+        let ref mut fragment = flow_ref::deref_mut(&mut self.flow).as_mut_block().fragment;
+        let adjustment;
         match mode {
-            Mode::Inline => specified(style.min_inline_size(), containing_length.unwrap()),
-            Mode::Block =>
-                match (style.min_block_size(), containing_length) {
-                    (min_size, Some(length)) => specified(min_size, length),
-                    (LengthOrPercentage::Length(length), None) => length,
-                    (LengthOrPercentage::Calc(calc), None) => calc.length(),
-                    (_, _) => Au(0)
-                }
+            Mode::Inline => {
+                fragment.compute_border_and_padding(containing_length, border_collapse::T::separate);
+                fragment.compute_inline_direction_margins(containing_length);
+                adjustment = match fragment.style().get_position().box_sizing {
+                    box_sizing::T::content_box =>
+                        fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
+                    box_sizing::T::border_box => fragment.margin.inline_start_end()
+                };
+            },
+            Mode::Block => {
+                adjustment = match fragment.style().get_position().box_sizing {
+                    box_sizing::T::content_box =>
+                        fragment.border_padding.block_start_end() + fragment.margin.block_start_end(),
+                    box_sizing::T::border_box => fragment.margin.block_start_end()
+                };
+            }
         }
+        max(self.min_size, min(self.base_size, self.max_size)) + adjustment
     }
 
-    pub fn max_main_size(&self, containing_length: Option<Au>, mode: Mode) -> Option<Au> {
-        let style = self.flow.as_block().fragment.style();
+    pub fn auto_margin_num(&self, mode: Mode) -> i32 {
+        // FIXME(stshine): even a simple helper method like this involves a vtable lookup.
+        // How to make it better?
+        let margin = self.flow.as_block().fragment.style().logical_margin();
+        let mut margin_num = 0;
         match mode {
-            Mode::Inline => specified_or_none(style.max_inline_size(), containing_length.unwrap()),
-            Mode::Block =>
-                match (style.max_block_size(), containing_length) {
-                    (max_size, Some(length)) => specified_or_none(max_size, length),
-                    (LengthOrPercentageOrNone::Length(length), None) => Some(length),
-                    (LengthOrPercentageOrNone::Calc(calc), None) => Some(calc.length()),
-                    (_, _) => None
+            Mode::Inline => {
+                if margin.inline_start == LengthOrPercentageOrAuto::Auto {
+                    margin_num += 1;
                 }
+                if margin.inline_end == LengthOrPercentageOrAuto::Auto {
+                    margin_num += 1;
+                }
+            }
+            Mode::Block => {
+                if margin.block_start == LengthOrPercentageOrAuto::Auto {
+                    margin_num += 1;
+                }
+                if margin.block_end == LengthOrPercentageOrAuto::Auto {
+                    margin_num += 1;
+                }
+            }
         }
-    }
-
-    pub fn init_sizes(&mut self, containing_length: Option<Au>, mode: Mode) {
-        self.base_size = self.flex_base_size(containing_length, mode);
-        self.max_size = self.max_main_size(containing_length, mode).unwrap_or(MAX_AU);
-        self.min_size = self.min_main_size(containing_length, mode);
+        margin_num
     }
 }
 
-//TODO(stshine): More fields may be required to handle collapsed items and baseline alignment.
+// TODO(stshine): More fields may be required to handle collapsed items and baseline alignment.
 #[derive(Debug)]
 struct FlexLine {
     pub range: Range<usize>,
@@ -311,8 +347,7 @@ impl FlexFlow {
         }
     }
 
-    fn get_flex_line(&mut self, container_size: Option<Au>) -> Option<FlexLine> {
-        let line_size = container_size.unwrap_or(MAX_AU);
+    fn get_flex_line(&mut self, container_size: Au) -> Option<FlexLine> {
         let start = if self.lines.len() == 0 {
             0
         } else {
@@ -328,29 +363,16 @@ impl FlexFlow {
         let items = &mut self.items[start..];
         for mut item in items.iter_mut() {
             item.init_sizes(container_size, self.main_mode);
-            let style = item.flow.as_block().fragment.style();
-            let adjustment = match style.get_position().box_sizing {
-                box_sizing::T::border_box => {
-                    let margin = style.logical_margin();
-                    if margin.inline_start == LengthOrPercentageOrAuto::Auto { margin_num += 1};
-                    if margin.inline_end == LengthOrPercentageOrAuto::Auto { margin_num += 1};
-                    (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
-                     MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
-                }
-                box_sizing::T::content_box => item.flow.as_block().fragment.surrounding_intrinsic_inline_size(),
-            };
-
-            let outer_main_size = adjustment + max(item.min_size, min(item.base_size, item.max_size));
-
-            if total_line_size + outer_main_size > line_size && end > start  && self.is_wrappable {
+            let outer_main_size = item.outer_main_size(container_size, self.main_mode);
+            if total_line_size + outer_main_size > container_size && end != start  && self.is_wrappable {
                 break;
             }
-
+            margin_num += item.auto_margin_num(self.main_mode);
             total_line_size += outer_main_size;
             end += 1;
         }
 
-        let line = FlexLine::new(start..end, container_size.map_or(Au(0), |i| i - total_line_size), margin_num);
+        let line = FlexLine::new(start..end, container_size - total_line_size, margin_num);
         Some(line)
     }
 
@@ -478,7 +500,7 @@ impl FlexFlow {
         let container_mode = self.block_flow.base.block_container_writing_mode;
         self.block_flow.base.position.size.inline = inline_size;
 
-        while let Some(mut line) = self.get_flex_line(Some(inline_size)) {
+        while let Some(mut line) = self.get_flex_line(inline_size) {
             let mut items = &mut self.items[line.range.clone()];
             line.flex_resolve(&mut items, false);
             //TODO(stshine): if this flex line contain children that have
