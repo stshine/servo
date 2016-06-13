@@ -262,7 +262,7 @@ impl FlexLine {
         }
 
         let initial_free_space = self.free_space;
-        while self.free_space != Au(0) || active_num > 0 {
+        while self.free_space != Au(0) && active_num > 0 {
             self.free_space =
                 if self.free_space > Au(0) {
                     min(initial_free_space.scale_by(total_grow), self.free_space)
@@ -552,7 +552,11 @@ impl FlexFlow {
                     if line.free_space != Au(0) && line.auto_margins == 0 {
                         match self.block_flow.fragment.style().get_position().justify_content {
                             justify_content::T::space_between => {
-                                line.free_space / (len-1)
+                                if item_num == 1 {
+                                    Au(0)
+                                } else {
+                                    line.free_space / (len-1)
+                                }
                             },
                             justify_content::T::space_around => {
                                 line.free_space /(len*2)
@@ -637,8 +641,16 @@ impl FlexFlow {
                     }
                 } else {
                     line_interval = match line_align {
-                        align_content::T::space_between => { free_space/(line_num-1) },
-                        align_content::T::space_around => { free_space/(line_num*2)  },
+                        align_content::T::space_between => {
+                            if line_num == 1 {
+                                Au(0)
+                            } else {
+                                free_space/(line_num-1)
+                            }
+                        },
+                        align_content::T::space_around => {
+                            free_space/(line_num*2)
+                        },
                         _ => { Au(0) },
                     };
                 }
