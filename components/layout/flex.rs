@@ -620,7 +620,8 @@ impl FlexFlow {
             total_cross_size += line.cross_size;
         }
 
-        if let Some(free_space) = self.block_flow.explicit_block_containing_size(layout_context)
+        let parent_container_size = self.block_flow.explicit_block_containing_size(layout_context);
+        if let Some(free_space) = self.block_flow.explicit_block_size(parent_container_size)
             .and_then(|i| if i - total_cross_size > Au(0) {Some(i - total_cross_size)} else { None }) {
                 match line_align {
                     align_content::T::center=> {
