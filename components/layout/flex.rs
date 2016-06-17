@@ -154,7 +154,16 @@ impl FlexItem {
             Mode::Inline => {
                 let basis = from_flex_basis(style.get_position().flex_basis,
                                             style.content_inline_size(), Some(containing_length));
-                let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size;
+
+                let adjust_size = match style.get_position().box_sizing {
+                    box_sizing::T::border_box => {
+                        let margin = style.logical_margin();
+                        (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
+                         MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
+                    }
+                    box_sizing::T::content_box => self.flow.as_block().fragment.surrounding_intrinsic_inline_size(),
+                };
+                let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
                 self.base_size = basis.specified_or_default(content_size);
                 self.max_size = specified_or_none(style.max_inline_size(), containing_length).unwrap_or(MAX_AU);
                 self.min_size = specified(style.min_inline_size(), containing_length);
@@ -163,7 +172,11 @@ impl FlexItem {
                 let basis = from_flex_basis(style.get_position().flex_basis,
                                             style.content_block_size(), Some(containing_length));
                 // This method should be called in assign_block_size() pass that the block is already layouted.
-                let content_size = block.base.position.size.block;
+                let content_size = match style.get_position().box_sizing {
+                    box_sizing::T::border_box => block.fragment.border_box.size.block,
+                    box_sizing::T::content_box => block.fragment.border_box.size.block -
+                        block.fragment.border_padding.block_start_end(),
+                };
                 self.base_size = basis.specified_or_default(content_size);
                 self.max_size = specified_or_none(style.max_block_size(), containing_length).unwrap_or(MAX_AU);
                 self.min_size = specified(style.min_block_size(), containing_length);
