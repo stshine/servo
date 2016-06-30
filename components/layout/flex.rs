@@ -704,26 +704,31 @@ impl FlexFlow {
 
                 let margin_block_start = MaybeAuto::from_style(margin.block_start, inline_size)
                     .specified_or_default(auto_len);
-                // let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
-                //     .specified_or_default(free_cross / auto_margin_num);
-                let self_align = block.fragment.style().get_position().align_self;
+                let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
+                    .specified_or_default(auto_len);
+                let free_cross = line.cross_size - block_size - margin_block_start - margin_block_end;
                 if auto_margin_num == 0 {
-                    //TODO(stshine): support baseline alignment.
+                    let self_align = block.fragment.style().get_position().align_self;
+                    // TODO(stshine): support baseline alignment.
                     let flex_cross = match self_align {
                         align_self::T::flex_end => free_cross,
                         align_self::T::center => free_cross / 2,
                         _ => Au(0),
                     };
-                    block.base.position.start.b = cur_b + flex_cross;
+                    block.base.position.start.b = cur_b + margin_block_start + flex_cross;
+                    if self_align == align_self::T::stretch
+                        && block.fragment.style().content_block_size() == LengthOrPercentageOrAuto::Auto {
+                            block.base.block_container_explicit_block_size = Some(line.cross_size);
+                            block.base.position.size.block =
+                                line.cross_size - margin_block_start - margin_block_end;
+                            block.fragment.border_box.size.block =
+                                line.cross_size - margin_block_start - margin_block_end;
+                            // FIXME(stshine): item with `align-self: stretch` and auto cross size should
+                            // act as if it has a fixed size, all child blocks should resolve against it.
+                            // block.assign_block_size(layout_context);
+                        }
                 } else {
                     block.base.position.start.b = cur_b + margin_block_start;
-                }
-                if self_align == align_self::T::stretch {
-                    block.base.position.size.block = line.cross_size;
-                    let ref mut kid_fragment = block.fragment;
-                    let mut position = kid_fragment.border_box;
-                    position.size.block = line.cross_size;
-                    kid_fragment.border_box = position;
                 }
             }
             cur_b += line_interval + line.cross_size;
