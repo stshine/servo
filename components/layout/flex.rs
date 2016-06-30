@@ -574,10 +574,13 @@ impl FlexFlow {
                                                      });
                 block.base.block_container_writing_mode = container_mode;
                     block.base.position.start.i = inline_position;
+                let item_outer_size = item_inline_size + block.fragment.border_padding.inline_start_end()
+                    + block.fragment.margin.inline_start_end();
                 if !self.main_reverse {
                 } else {
                     block.base.position.start.i =
-                        _inline_end_content_edge - inline_position - block.base.position.size.inline;
+                        inline_start_content_edge + content_inline_size
+                        + inline_start_content_edge - inline_position  - item_outer_size;
                 };
                 inline_position += block.base.position.size.inline +
                     if line.free_space != Au(0) && line.auto_margins == 0 {
