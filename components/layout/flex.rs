@@ -728,9 +728,9 @@ impl FlexFlow {
             }
             cur_b += line_interval + line.cross_size;
         }
-        self.block_flow.fragment.border_box.size.block = total_cross_size;
-        self.block_flow.base.position.size.block = total_cross_size;
-        self.block_flow.assign_block_size(layout_context);
+        let total_block_size = total_cross_size + self.block_flow.fragment.border_padding.block_start_end();
+        self.block_flow.fragment.border_box.size.block = total_block_size;
+        self.block_flow.base.position.size.block = total_block_size;
     }
 }
 
