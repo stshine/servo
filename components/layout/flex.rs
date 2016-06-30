@@ -325,7 +325,7 @@ pub struct FlexFlow {
     /// List of flex-items that belong to this flex-container
     items: Vec<FlexItem>,
     /// True if the flex-direction is *-reversed
-    is_reverse: bool,
+    main_reverse: bool,
     /// True if this flex container can be multiline.
     is_wrappable: bool,
     /// True if the cross direction is reversed.
@@ -336,17 +336,30 @@ impl FlexFlow {
     pub fn from_fragment(fragment: Fragment,
                          flotation: Option<FloatKind>)
                          -> FlexFlow {
-        let (main_mode, is_reverse) = match fragment.style.get_position().flex_direction {
-            flex_direction::T::row            => (Mode::Inline, false),
-            flex_direction::T::row_reverse    => (Mode::Inline, true),
-            flex_direction::T::column         => (Mode::Block, false),
-            flex_direction::T::column_reverse => (Mode::Block, true),
-        };
-        let (is_wrappable, cross_reverse) = match fragment.style.get_position().flex_wrap {
-            flex_wrap::T::nowrap              => (false, false),
-            flex_wrap::T::wrap                => (true, false),
-            flex_wrap::T::wrap_reverse        => (true, true),
-        };
+        let main_mode;
+        let main_reverse;
+        let is_wrappable;
+        let cross_reverse;
+        {
+            let style = fragment.style();
+            let (mode, reverse) = match style.get_position().flex_direction {
+                flex_direction::T::row            => (Mode::Inline, false),
+                flex_direction::T::row_reverse    => (Mode::Inline, true),
+                flex_direction::T::column         => (Mode::Block, false),
+                flex_direction::T::column_reverse => (Mode::Block, true),
+            };
+            main_mode = mode;
+            main_reverse =
+                reverse == style.writing_mode.is_bidi_ltr();
+            let (wrappable, reverse) = match fragment.style.get_position().flex_wrap {
+                flex_wrap::T::nowrap              => (false, false),
+                flex_wrap::T::wrap                => (true, false),
+                flex_wrap::T::wrap_reverse        => (true, true),
+            };
+            is_wrappable = wrappable;
+            cross_reverse =
+                reverse == (style.writing_mode.is_vertical() && style.writing_mode.is_vertical_lr());
+        }
         FlexFlow {
             block_flow: BlockFlow::from_fragment(fragment, flotation),
             main_mode: main_mode,
@@ -354,7 +367,7 @@ impl FlexFlow {
             available_cross_size: AxisSize::Infinite,
             lines: Vec::new(),
             items: Vec::new(),
-            is_reverse: is_reverse,
+            main_reverse: main_reverse,
             is_wrappable: is_wrappable,
             cross_reverse: cross_reverse
         }
@@ -555,8 +568,8 @@ impl FlexFlow {
                                                          margin_inline_end: margin_inline_end
                                                      });
                 block.base.block_container_writing_mode = container_mode;
-                if !self.is_reverse {
                     block.base.position.start.i = inline_position;
+                if !self.main_reverse {
                 } else {
                     block.base.position.start.i =
                         _inline_end_content_edge - inline_position - block.base.position.size.inline;
@@ -586,14 +599,14 @@ impl FlexFlow {
 
     // TODO(zentner): This function should actually flex elements!
     fn block_mode_assign_block_size<'a>(&mut self, layout_context: &'a LayoutContext<'a>) {
-        let mut cur_b = if !self.is_reverse {
+        let mut cur_b = if !self.main_reverse {
             self.block_flow.fragment.border_padding.block_start
         } else {
             self.block_flow.fragment.border_box.size.block
         };
         for kid in &mut self.items {
             let base = flow::mut_base(flow_ref::deref_mut(&mut kid.flow));
-            if !self.is_reverse {
+            if !self.main_reverse {
                 base.position.start.b = cur_b;
                 cur_b = cur_b + base.position.size.block;
             } else {
