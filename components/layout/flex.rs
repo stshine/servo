@@ -637,11 +637,9 @@ impl FlexFlow {
 
         for line in self.lines.iter_mut() {
             for item in &self.items[line.range.clone()] {
-                let margin = item.flow.as_block().fragment.style().logical_margin();
+                let ref fragment = item.flow.as_block().fragment;
                 line.cross_size = max(line.cross_size,
-                                      item.flow.as_block().base.position.size.block +
-                                      MaybeAuto::from_style(margin.block_start, inline_size).specified_or_zero() +
-                                      MaybeAuto::from_style(margin.block_end, inline_size).specified_or_zero());
+                                      fragment.border_box.size.block + fragment.margin.block_start_end());
             }
             total_cross_size += line.cross_size;
         }
