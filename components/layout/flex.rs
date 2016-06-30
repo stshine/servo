@@ -560,10 +560,15 @@ impl FlexFlow {
                     .specified_or_default(auto_len);
                 let margin_inline_end = MaybeAuto::from_style(margin.inline_end, inline_size)
                     .specified_or_default(auto_len);
+                let item_inline_size = item.main_size -
+                    match block.fragment.style().get_position().box_sizing {
+                        box_sizing::T::border_box => block.fragment.border_padding.inline_start_end(),
+                        box_sizing::T::content_box => Au(0),
+                    };
                 set_inline_size_constraint_solutions(block,
                                                      ISizeConstraintSolution {
                                                          inline_start: Au(0),
-                                                         inline_size: item.main_size,
+                                                         inline_size: item_inline_size,
                                                          margin_inline_start: margin_inline_start,
                                                          margin_inline_end: margin_inline_end
                                                      });
