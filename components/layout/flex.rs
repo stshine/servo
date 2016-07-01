@@ -551,6 +551,8 @@ impl FlexFlow {
 
             for item in items.iter_mut() {
                 let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
+                // TODO(stshine): should this be done during construction?
+                block.mark_as_flex();
                 let margin = block.fragment.style().logical_margin();
                 let auto_len =
                     if line.auto_margin_count == 0 {

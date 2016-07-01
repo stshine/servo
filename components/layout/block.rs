@@ -488,6 +488,7 @@ pub enum BlockType {
     FloatNonReplaced,
     InlineBlockReplaced,
     InlineBlockNonReplaced,
+    FlexItem,
 }
 
 #[derive(Clone, PartialEq)]
@@ -531,6 +532,8 @@ bitflags! {
     flags BlockFlowFlags: u8 {
         #[doc = "If this is set, then this block flow is the root flow."]
         const IS_ROOT = 0x01,
+        #[doc = "Whether this block flow is a child of a flex container."]
+        const IS_FLEX = 0b0001_0000,
     }
 }
 
@@ -1681,6 +1684,14 @@ impl BlockFlow {
         }
         let padding = self.fragment.style.logical_padding();
         padding.block_start.is_definitely_zero() && padding.block_end.is_definitely_zero()
+    }
+
+    pub fn mark_as_flex(&mut self) {
+        self.flags.insert(IS_FLEX)
+    }
+
+    pub fn is_flex(&self) -> bool {
+        self.flags.contains(IS_FLEX)
     }
 }
 
