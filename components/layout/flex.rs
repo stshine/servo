@@ -276,7 +276,8 @@ impl FlexLine {
         }
 
         let initial_free_space = self.free_space;
-        while self.free_space != Au(0) && active_num > 0 {
+        let mut total_variation = Au(1);
+        while total_variation != Au(0) && self.free_space != Au(0) && active_num > 0 {
             self.free_space =
                 if self.free_space > Au(0) {
                     min(initial_free_space.scale_by(total_grow), self.free_space)
@@ -284,27 +285,28 @@ impl FlexLine {
                     max(initial_free_space.scale_by(total_shrink), self.free_space)
                 };
 
-            let free_space = self.free_space;
+            total_variation = Au(0);
             for item in items.iter_mut().filter(|i| !i.is_freezed).filter(|i| !(i.is_strut && collapse)) {
                 let (factor, end_size) = if self.free_space > Au(0) {
                     (item.flex_grow / total_grow, item.max_size)
                 } else {
                     (item.flex_shrink * item.base_size.0 as f32 / total_scaled, item.min_size)
                 };
-                let mut variation = free_space.scale_by(factor);
+                let variation = self.free_space.scale_by(factor);
                 if variation.0.abs() > (end_size - item.main_size).0.abs() {
-                    variation = end_size - item.main_size;
                     item.main_size = end_size;
                     item.is_freezed = true;
                     active_num -= 1;
                     total_shrink -= item.flex_shrink;
                     total_grow -= item.flex_grow;
                     total_scaled -= item.flex_shrink * item.base_size.0 as f32;
+                    total_variation += end_size - item.main_size;
                 } else {
                     item.main_size += variation;
+                    total_variation += variation;
                 }
-                self.free_space -= variation;
             }
+            self.free_space -= total_variation;
         }
     }
 }
