@@ -191,6 +191,7 @@ impl FlexItem {
             Mode::Inline => {
                 fragment.compute_border_and_padding(containing_length, border_collapse::T::separate);
                 fragment.compute_inline_direction_margins(containing_length);
+                fragment.compute_block_direction_margins(containing_length);
                 adjustment = match fragment.style().get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
@@ -551,7 +552,6 @@ impl FlexFlow {
             for item in items.iter_mut() {
                 let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
                 let margin = block.fragment.style().logical_margin();
-                block.fragment.compute_border_and_padding(inline_size, border_collapse::T::separate);
                 let auto_len =
                     if line.auto_margin_count == 0 {
                         Au(0)
