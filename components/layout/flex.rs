@@ -568,7 +568,7 @@ impl FlexFlow {
                 block.mark_as_flex();
                 let margin = block.fragment.style().logical_margin();
                 let auto_len =
-                    if line.auto_margin_count == 0 || line.free_space <= 0 {
+                    if line.auto_margin_count == 0 || line.free_space <= Au(0) {
                         Au(0)
                     } else {
                         line.free_space / line.auto_margin_count
