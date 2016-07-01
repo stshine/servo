@@ -295,16 +295,16 @@ impl FlexLine {
                 };
                 let variation = self.free_space.scale_by(factor);
                 if variation.0.abs() > (end_size - item.main_size).0.abs() {
+                    total_variation += end_size - item.main_size;
                     item.main_size = end_size;
                     item.is_freezed = true;
                     active_num -= 1;
                     total_shrink -= item.flex_shrink;
                     total_grow -= item.flex_grow;
                     total_scaled -= item.flex_shrink * item.base_size.0 as f32;
-                    total_variation += end_size - item.main_size;
                 } else {
-                    item.main_size += variation;
                     total_variation += variation;
+                    item.main_size += variation;
                 }
             }
             self.free_space -= total_variation;
