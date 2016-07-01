@@ -650,7 +650,7 @@ impl BlockFlow {
             BlockType::FlexItem => {
                 let inline_size_computer = FlexItem;
                 inline_size_computer.compute_used_inline_size(self,
-                                                              layout_context,
+                                                              shared_context,
                                                               containing_block_inline_size);
             }
         }
@@ -3081,9 +3081,11 @@ impl ISizeAndMarginsComputer for InlineBlockReplaced {
 impl ISizeAndMarginsComputer for FlexItem {
     fn compute_used_inline_size(&self,
                                 block: &mut BlockFlow,
-                                _: &LayoutContext,
+                                shared_context: &SharedStyleContext,
                                 parent_flow_inline_size: Au) {
-        block.fragment.assign_replaced_inline_size_if_necessary(parent_flow_inline_size);
+        let container_block_size = block.explicit_block_containing_size(shared_context);
+        block.fragment.assign_replaced_inline_size_if_necessary(parent_flow_inline_size,
+                                                                container_block_size);
     }
 
     fn solve_inline_size_constraints(&self,

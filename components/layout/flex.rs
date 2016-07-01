@@ -28,6 +28,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use style::computed_values::{box_sizing, border_collapse};
 use style::computed_values::{flex_direction, flex_wrap, justify_content, align_content, align_self};
+use style::context::StyleContext;
 use style::logical_geometry::LogicalSize;
 use style::properties::{ComputedValues, ServoComputedValues};
 use style::servo::SharedStyleContext;
@@ -654,7 +655,8 @@ impl FlexFlow {
             total_cross_size += line.cross_size;
         }
 
-        let parent_container_size = self.block_flow.explicit_block_containing_size(layout_context);
+        let parent_container_size =
+            self.block_flow.explicit_block_containing_size(layout_context.shared_context());
         if let Some(free_space) = self.block_flow.explicit_block_size(parent_container_size)
             .and_then(|i| if i - total_cross_size > Au(0) {Some(i - total_cross_size)} else { None }) {
                 total_cross_size += free_space;
