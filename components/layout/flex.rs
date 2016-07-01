@@ -533,17 +533,31 @@ impl FlexFlow {
             // property visibility:hidden, exclude them and resolve again.
 
             let item_count = items.len() as i32;
-            let free_main = max(line.free_space, Au(0));
             let mut cur_i = inline_start_content_edge;
-            match self.block_flow.fragment.style().get_position().justify_content {
-                justify_content::T::center => {
-                    cur_i += free_main / 2 ;
+            let item_interval = if line.free_space >= Au(0) && line.auto_margin_count == 0 {
+                match self.block_flow.fragment.style().get_position().justify_content {
+                    justify_content::T::space_between => {
+                        if item_count == 1 {
+                            Au(0)
+                        } else {
+                            line.free_space / (item_count-1)
+                        }
+                    },
+                    justify_content::T::space_around => {
+                        line.free_space / item_count
+                    },
+                    _ => {Au(0)},
                 }
-                justify_content::T::space_around => {
-                    cur_i += free_main /(item_count*2);
+            } else {
+                Au(0)
+            };
+
+            match self.block_flow.fragment.style().get_position().justify_content {
+                justify_content::T::center | justify_content::T::space_around => {
+                    cur_i += (line.free_space - item_interval * (item_count - 1)) / 2;
                 }
                 justify_content::T::flex_end => {
-                    cur_i += free_main;
+                    cur_i += line.free_space;
                 }
                 _ => {}
             }
@@ -554,10 +568,10 @@ impl FlexFlow {
                 block.mark_as_flex();
                 let margin = block.fragment.style().logical_margin();
                 let auto_len =
-                    if line.auto_margin_count == 0 {
+                    if line.auto_margin_count == 0 || line.free_space <= 0 {
                         Au(0)
                     } else {
-                        free_main / line.auto_margin_count
+                        line.free_space / line.auto_margin_count
                     };
                 let margin_inline_start = MaybeAuto::from_style(margin.inline_start, inline_size)
                     .specified_or_default(auto_len);
@@ -585,24 +599,7 @@ impl FlexFlow {
                         inline_start_content_edge + content_inline_size
                         + inline_start_content_edge - cur_i  - item_outer_size;
                 };
-                cur_i += item_outer_size +
-                    if free_main != Au(0) && line.auto_margin_count == 0 {
-                        match self.block_flow.fragment.style().get_position().justify_content {
-                            justify_content::T::space_between => {
-                                if item_count == 1 {
-                                    Au(0)
-                                } else {
-                                    free_main / (item_count-1)
-                                }
-                            },
-                            justify_content::T::space_around => {
-                                free_main / item_count
-                            },
-                            _ => {Au(0)},
-                        }
-                    } else {
-                        Au(0)
-                    };
+                cur_i += item_outer_size + item_interval;
             }
             self.lines.push(line);
         }
@@ -658,19 +655,7 @@ impl FlexFlow {
         let parent_container_size = self.block_flow.explicit_block_containing_size(layout_context);
         if let Some(free_space) = self.block_flow.explicit_block_size(parent_container_size)
             .and_then(|i| if i - total_cross_size > Au(0) {Some(i - total_cross_size)} else { None }) {
-                match line_align {
-                    align_content::T::center=> {
-                        cur_b += free_space / 2 ;
-                    }
-                    align_content::T::space_around => {
-                        cur_b += free_space /(line_count*2);
-                    }
-                    align_content::T::flex_end => {
-                        cur_b += free_space;
-                    }
-                    _ => {}
-                }
-
+                total_cross_size += free_space;
                 if line_align == align_content::T::stretch {
                     for line in self.lines.iter_mut() {
                         line.cross_size += free_space / line_count;
@@ -690,7 +675,15 @@ impl FlexFlow {
                         _ => { Au(0) },
                     };
                 }
-                total_cross_size += free_space;
+                match line_align {
+                    align_content::T::center | align_content::T::space_around => {
+                        cur_b += (free_space - line_interval * (line_count - 1)) / 2;
+                    }
+                    align_content::T::flex_end => {
+                        cur_b += free_space;
+                    }
+                    _ => {}
+                }
             }
 
         for line in &self.lines {
