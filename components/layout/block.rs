@@ -564,7 +564,9 @@ impl BlockFlow {
     /// This determines the algorithm used to calculate inline-size, block-size, and the
     /// relevant margins for this Block.
     pub fn block_type(&self) -> BlockType {
-        if self.base.flags.contains(IS_ABSOLUTELY_POSITIONED) {
+        if self.flags.contains(IS_FLEX) {
+            BlockType::FlexItem
+        } else if self.base.flags.contains(IS_ABSOLUTELY_POSITIONED) {
             if self.is_replaced_content() {
                 BlockType::AbsoluteReplaced
             } else {
@@ -643,6 +645,12 @@ impl BlockFlow {
                 let inline_size_computer = BlockNonReplaced;
                 inline_size_computer.compute_used_inline_size(self,
                                                               shared_context,
+                                                              containing_block_inline_size);
+            }
+            BlockType::FlexItem => {
+                let inline_size_computer = FlexItem;
+                inline_size_computer.compute_used_inline_size(self,
+                                                              layout_context,
                                                               containing_block_inline_size);
             }
         }
@@ -2579,6 +2587,7 @@ pub struct FloatNonReplaced;
 pub struct FloatReplaced;
 pub struct InlineBlockNonReplaced;
 pub struct InlineBlockReplaced;
+pub struct FlexItem;
 
 impl ISizeAndMarginsComputer for AbsoluteNonReplaced {
     /// Solve the horizontal constraint equation for absolute non-replaced elements.
@@ -3066,6 +3075,25 @@ impl ISizeAndMarginsComputer for InlineBlockReplaced {
         // For replaced block flow, the rest of the constraint solving will
         // take inline-size to be specified as the value computed here.
         MaybeAuto::Specified(fragment.content_inline_size())
+    }
+}
+
+impl ISizeAndMarginsComputer for FlexItem {
+    fn compute_used_inline_size(&self,
+                                block: &mut BlockFlow,
+                                _: &LayoutContext,
+                                parent_flow_inline_size: Au) {
+        block.fragment.assign_replaced_inline_size_if_necessary(parent_flow_inline_size);
+    }
+
+    fn solve_inline_size_constraints(&self,
+                                     block: &mut BlockFlow,
+                                     _: &ISizeConstraintInput)
+                                     -> ISizeConstraintSolution {
+        let fragment = block.fragment();
+        ISizeConstraintSolution::new(fragment.border_box.size.inline,
+                                     fragment.margin.inline_start,
+                                     fragment.margin.inline_end)
     }
 }
 
