@@ -511,7 +511,6 @@ impl FlexFlow {
         debug!("inline_mode_assign_inline_sizes");
 
         debug!("content_inline_size = {:?}", content_inline_size);
-
         let child_count = ImmutableFlowUtils::child_count(self as &Flow) as i32;
         debug!("child_count = {:?}", child_count);
         if child_count == 0 {
@@ -530,8 +529,8 @@ impl FlexFlow {
         while let Some(mut line) = self.get_flex_line(inline_size) {
             let mut items = &mut self.items[line.range.clone()];
             line.flex_resolve(&mut items, false);
-            //TODO(stshine): if this flex line contain children that have
-            //property visibility:hidden, exclude them and resolve again.
+            // TODO(stshine): if this flex line contain children that have
+            // property visibility:hidden, exclude them and resolve again.
 
             let item_count = items.len() as i32;
             let free_main = max(line.free_space, Au(0));
@@ -773,7 +772,7 @@ impl Flow for FlexFlow {
         // This part was handled in the flow constructor.
 
         // Flexbox Section 9.1: Re-order the flex items according to their order.
-
+        // TODO(stshine): this should be done during construction.
         let mut items = self.block_flow.base.children.iter_flow_ref_mut()
             .filter(|flow| !flow.as_block().base.flags.contains(IS_ABSOLUTELY_POSITIONED))
             .map(|flow| FlexItem::new(flow.clone()))
