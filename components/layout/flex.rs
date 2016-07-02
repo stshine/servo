@@ -657,38 +657,37 @@ impl FlexFlow {
 
         let parent_container_size =
             self.block_flow.explicit_block_containing_size(layout_context.shared_context());
-        if let Some(free_space) = self.block_flow.explicit_block_size(parent_container_size)
-            .and_then(|i| if i - total_cross_size > Au(0) {Some(i - total_cross_size)} else { None }) {
-                total_cross_size += free_space;
-                if line_align == align_content::T::stretch {
-                    for line in self.lines.iter_mut() {
-                        line.cross_size += free_space / line_count;
-                    }
-                } else {
-                    line_interval = match line_align {
-                        align_content::T::space_between => {
-                            if line_count == 1 {
-                                Au(0)
-                            } else {
-                                free_space/(line_count-1)
-                            }
-                        },
-                        align_content::T::space_around => {
-                            free_space/line_count
-                        },
-                        _ => { Au(0) },
-                    };
-                }
-                match line_align {
-                    align_content::T::center | align_content::T::space_around => {
-                        cur_b += (free_space - line_interval * (line_count - 1)) / 2;
-                    }
-                    align_content::T::flex_end => {
-                        cur_b += free_space;
-                    }
-                    _ => {}
+        if let Some(container_block_size) = self.block_flow.explicit_block_size(parent_container_size) {
+            let free_space = container_block_size - total_cross_size;
+            total_cross_size = container_block_size;
+            if line_align == align_content::T::stretch && free_space > Au(0) {
+                for line in self.lines.iter_mut() {
+                    line.cross_size += free_space / line_count;
                 }
             }
+            line_interval = match line_align {
+                align_content::T::space_between => {
+                    if line_count == 1 {
+                        Au(0)
+                    } else {
+                        free_space/(line_count-1)
+                    }
+                },
+                align_content::T::space_around => {
+                    free_space/line_count
+                },
+                _ => { Au(0) },
+            };
+            match line_align {
+                align_content::T::center | align_content::T::space_around => {
+                    cur_b += (free_space - line_interval * (line_count - 1)) / 2;
+                }
+                align_content::T::flex_end => {
+                    cur_b += free_space;
+                }
+                _ => {}
+            }
+        }
 
         for line in &self.lines {
             for mut item in self.items[line.range.clone()].iter_mut() {
