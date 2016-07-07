@@ -214,26 +214,26 @@ impl FlexItem {
         // FIXME(stshine): even a simple helper method like this involves a vtable lookup.
         // How to make it better?
         let margin = self.flow.as_block().fragment.style().logical_margin();
-        let mut margin_num = 0;
+        let mut margin_count = 0;
         match mode {
             Mode::Inline => {
                 if margin.inline_start == LengthOrPercentageOrAuto::Auto {
-                    margin_num += 1;
+                    margin_count += 1;
                 }
                 if margin.inline_end == LengthOrPercentageOrAuto::Auto {
-                    margin_num += 1;
+                    margin_count += 1;
                 }
             }
             Mode::Block => {
                 if margin.block_start == LengthOrPercentageOrAuto::Auto {
-                    margin_num += 1;
+                    margin_count += 1;
                 }
                 if margin.block_end == LengthOrPercentageOrAuto::Auto {
-                    margin_num += 1;
+                    margin_count += 1;
                 }
             }
         }
-        margin_num
+        margin_count
     }
 }
 
