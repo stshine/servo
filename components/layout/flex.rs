@@ -80,6 +80,10 @@ enum Mode {
     Block
 }
 
+/// This function accepts the flex-basis and the size property in main direction from style,
+/// and the container size, then return the used value of flex basis. it can be used to help
+/// determining the flex base size and to indicate whether the main size of the item
+/// is definite after flex size resolving.
 fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
                    content_size: LengthOrPercentageOrAuto,
                    containing_length: Option<Au>) -> MaybeAuto {
@@ -103,18 +107,30 @@ fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
     }
 }
 
+/// Represent a child in a flex container. Most fields here are used in
+/// flex size resolving, and items are sorted by the 'order' property.
 #[derive(Debug)]
 struct FlexItem {
+    /// Main size of a flex item, used to store results of flexible length calcuation.
     pub main_size: Au,
+    /// Used flex base size.
     pub base_size: Au,
+    /// The minimal size in main direction.
     pub min_size: Au,
+    /// The maximal main size. If this property is not actually set by style
+    /// It will be the largest size available for code reuse.
     pub max_size: Au,
+    /// Reference to the actual flow.
     pub flow: FlowRef,
+    /// The 'flex-grow' property of this item.
     pub flex_grow: f32,
+    /// The 'flex-shrink' property of this item.
     pub flex_shrink: f32,
+    /// The 'order' property of this item.
     pub order: i32,
+    /// Whether the main size has met its constraint.
     pub is_freezed: bool,
-    //  this flow is a strut if it has property visibility::collapse.
+    /// True if this flow has property 'visibility::collapse'.
     pub is_strut: bool
 }
 
@@ -145,6 +161,9 @@ impl FlexItem {
         }
     }
 
+    /// Initialize the used flex base size, minimal main size and maximal main size.
+    /// For block mode container this method should be called in assign_block_size()
+    /// pass so that the item has already been layouted.
     pub fn init_sizes(&mut self, containing_length: Au, mode: Mode) {
         let block = self.flow.as_block();
         let style = block.fragment.style();
@@ -172,7 +191,6 @@ impl FlexItem {
             Mode::Block => {
                 let basis = from_flex_basis(style.get_position().flex_basis,
                                             style.content_block_size(), Some(containing_length));
-                // This method should be called in assign_block_size() pass that the block is already layouted.
                 let content_size = match style.get_position().box_sizing {
                     box_sizing::T::border_box => block.fragment.border_box.size.block,
                     box_sizing::T::content_box => block.fragment.border_box.size.block -
@@ -185,11 +203,13 @@ impl FlexItem {
         }
     }
 
+    /// Return the outer main size of the item, including paddings and margins.
     pub fn outer_main_size(&mut self, containing_length: Au, mode: Mode) -> Au {
         let ref mut fragment = flow_ref::deref_mut(&mut self.flow).as_mut_block().fragment;
         let adjustment;
         match mode {
             Mode::Inline => {
+                // These methods compute auto margins to zero length, which is exactly what we want.
                 fragment.compute_border_and_padding(containing_length, border_collapse::T::separate);
                 fragment.compute_inline_direction_margins(containing_length);
                 fragment.compute_block_direction_margins(containing_length);
