@@ -691,48 +691,55 @@ impl FlexFlow {
 
         for line in &self.lines {
             for mut item in self.items[line.range.clone()].iter_mut() {
+                let auto_margin_count = item.auto_margin_num(Mode::Block);
                 let mut block = flow_ref::deref_mut(&mut item.flow).as_mut_block();
                 let margin = block.fragment.style().logical_margin();
-                let block_size = block.base.position.size.block;
-                let free_cross = line.cross_size - block_size;
-                let mut auto_margin_count = 0;
-                let mut auto_len = Au(0);
-                if margin.block_start == LengthOrPercentageOrAuto::Auto {
-                    auto_len = free_cross;
-                    auto_margin_count += 1;
-                }
-                if margin.block_end == LengthOrPercentageOrAuto::Auto {
-                    auto_len = free_cross / 2;
-                    auto_margin_count += 1;
+
+                let mut margin_block_start = block.fragment.margin.block_start;
+                let mut margin_block_end = block.fragment.margin.block_end;
+                let mut free_space = line.cross_size - block.base.position.size.block
+                    - block.fragment.margin.block_start_end();
+
+                if auto_margin_count > 0 {
+                    if margin.block_start == LengthOrPercentageOrAuto::Auto {
+                        margin_block_start = if free_space < Au(0) {
+                            Au(0)
+                        } else {
+                            free_space / auto_margin_count
+                        };
+                    }
+                    margin_block_end = line.cross_size - margin_block_start - block.base.position.size.block;
+                    free_space = Au(0);
                 }
 
-                let margin_block_start = MaybeAuto::from_style(margin.block_start, inline_size)
-                    .specified_or_default(auto_len);
-                let margin_block_end = MaybeAuto::from_style(margin.block_end, inline_size)
-                    .specified_or_default(auto_len);
-                let free_cross = line.cross_size - block_size - margin_block_start - margin_block_end;
-                if auto_margin_count == 0 {
-                    let self_align = block.fragment.style().get_position().align_self;
-                    // TODO(stshine): support baseline alignment.
+                let self_align = block.fragment.style().get_position().align_self;
+                if self_align == align_self::T::stretch
+                    && block.fragment.style().content_block_size() == LengthOrPercentageOrAuto::Auto {
+                        free_space = Au(0);
+                        block.base.block_container_explicit_block_size = Some(line.cross_size);
+                        block.base.position.size.block =
+                            line.cross_size - margin_block_start - margin_block_end;
+                        block.fragment.border_box.size.block =
+                            line.cross_size - margin_block_start - margin_block_end;
+                        // FIXME(stshine): item with `align-self: stretch` and auto cross size should
+                        // act as if it has a fixed size, all child blocks should resolve against it.
+                        // block.assign_block_size(layout_context);
+                    }
+
+                block.base.position.start.b = cur_b + margin_block_start;
+                // TODO(stshine): support baseline alignment.
+                if free_space != Au(0) {
                     let flex_cross = match self_align {
-                        align_self::T::flex_end => free_cross,
-                        align_self::T::center => free_cross / 2,
+                        align_self::T::flex_end => free_space,
+                        align_self::T::center => free_space / 2,
                         _ => Au(0),
                     };
-                    block.base.position.start.b = cur_b + margin_block_start + flex_cross;
-                    if self_align == align_self::T::stretch
-                        && block.fragment.style().content_block_size() == LengthOrPercentageOrAuto::Auto {
-                            block.base.block_container_explicit_block_size = Some(line.cross_size);
-                            block.base.position.size.block =
-                                line.cross_size - margin_block_start - margin_block_end;
-                            block.fragment.border_box.size.block =
-                                line.cross_size - margin_block_start - margin_block_end;
-                            // FIXME(stshine): item with `align-self: stretch` and auto cross size should
-                            // act as if it has a fixed size, all child blocks should resolve against it.
-                            // block.assign_block_size(layout_context);
-                        }
-                } else {
-                    block.base.position.start.b = cur_b + margin_block_start;
+                    block.base.position.start.b +=
+                        if !self.cross_reverse {
+                            flex_cross
+                        } else {
+                            free_space - flex_cross
+                        };
                 }
             }
             cur_b += line_interval + line.cross_size;
