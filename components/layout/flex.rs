@@ -85,7 +85,7 @@ enum Mode {
 /// determining the flex base size and to indicate whether the main size of the item
 /// is definite after flex size resolving.
 fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
-                   content_size: LengthOrPercentageOrAuto,
+                   main_length: LengthOrPercentageOrAuto,
                    containing_length: Option<Au>) -> MaybeAuto {
     match (flex_basis, containing_length) {
         (LengthOrPercentageOrAutoOrContent::Length(length), _) =>
@@ -101,9 +101,9 @@ fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
         (LengthOrPercentageOrAutoOrContent::Content, _) =>
             MaybeAuto::Auto,
         (LengthOrPercentageOrAutoOrContent::Auto, Some(size)) =>
-            MaybeAuto::from_style(content_size, size),
+            MaybeAuto::from_style(main_length, size),
         (LengthOrPercentageOrAutoOrContent::Auto, None) => {
-            if let LengthOrPercentageOrAuto::Length(length) = content_size {
+            if let LengthOrPercentageOrAuto::Length(length) = main_length {
                 MaybeAuto::Specified(length)
             } else {
                 MaybeAuto::Auto
