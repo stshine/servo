@@ -92,18 +92,23 @@ fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
             MaybeAuto::Specified(length),
         (LengthOrPercentageOrAutoOrContent::Percentage(percent), Some(size)) =>
             MaybeAuto::Specified(size.scale_by(percent)),
-        (LengthOrPercentageOrAutoOrContent::Percentage(_), None) => MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Percentage(_), None) =>
+            MaybeAuto::Auto,
         (LengthOrPercentageOrAutoOrContent::Calc(calc), Some(size)) =>
             MaybeAuto::Specified(calc.length() + size.scale_by(calc.percentage())),
-        (LengthOrPercentageOrAutoOrContent::Calc(_), None) => MaybeAuto::Auto,
-        (LengthOrPercentageOrAutoOrContent::Content, _) => MaybeAuto::Auto,
-        (LengthOrPercentageOrAutoOrContent::Auto, Some(size)) => MaybeAuto::from_style(content_size, size),
-        (LengthOrPercentageOrAutoOrContent::Auto, None) =>
-            if let LengthOrPercentageOrAuto::Length(l) = content_size {
-                MaybeAuto::Specified(l)
+        (LengthOrPercentageOrAutoOrContent::Calc(_), None) =>
+            MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Content, _) =>
+            MaybeAuto::Auto,
+        (LengthOrPercentageOrAutoOrContent::Auto, Some(size)) =>
+            MaybeAuto::from_style(content_size, size),
+        (LengthOrPercentageOrAutoOrContent::Auto, None) => {
+            if let LengthOrPercentageOrAuto::Length(length) = content_size {
+                MaybeAuto::Specified(length)
             } else {
                 MaybeAuto::Auto
             }
+        }
     }
 }
 
@@ -173,7 +178,8 @@ impl FlexItem {
             // https://drafts.csswg.org/css-flexbox-1/#min-size-auto
             Mode::Inline => {
                 let basis = from_flex_basis(style.get_position().flex_basis,
-                                            style.content_inline_size(), Some(containing_length));
+                                            style.content_inline_size(),
+                                            Some(containing_length));
 
                 let adjust_size = match style.get_position().box_sizing {
                     box_sizing::T::border_box => {
@@ -181,7 +187,7 @@ impl FlexItem {
                         (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
                          MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
                     }
-                    box_sizing::T::content_box => self.flow.as_block().fragment.surrounding_intrinsic_inline_size(),
+                    box_sizing::T::content_box => block.fragment.surrounding_intrinsic_inline_size(),
                 };
                 let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
                 self.base_size = basis.specified_or_default(content_size);
