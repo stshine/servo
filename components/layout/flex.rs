@@ -127,6 +127,8 @@ struct FlexItem {
     pub max_size: Au,
     /// Reference to the actual flow.
     pub flow: FlowRef,
+    /// Style of the child flow, stored here to reduce overhead.
+    pub style: Arc<ServoComputedValues>,
     /// The 'flex-grow' property of this item.
     pub flex_grow: f32,
     /// The 'flex-shrink' property of this item.
@@ -141,16 +143,11 @@ struct FlexItem {
 
 impl FlexItem {
     pub fn new(flow: FlowRef) -> FlexItem {
-        let flex_grow;
-        let flex_shrink;
-        let order;
-        {
-            let style = flow.as_block().fragment.style();
-            flex_grow = style.get_position().flex_grow;
-            flex_shrink = style.get_position().flex_shrink;
-            order = style.get_position().order;
-            // TODO(stshine): for item with visibility:collapse, set is_strut to true.
-        }
+        let style = flow.as_block().fragment.style.clone();
+        let flex_grow = style.get_position().flex_grow;
+        let flex_shrink = style.get_position().flex_shrink;
+        let order = style.get_position().order;
+        // TODO(stshine): for item with visibility:collapse, set is_strut to true.
 
         FlexItem {
             main_size: Au(0),
@@ -158,6 +155,7 @@ impl FlexItem {
             min_size: Au(0),
             max_size: MAX_AU,
             flow: flow,
+            style: style,
             flex_grow: flex_grow,
             flex_shrink: flex_shrink,
             order: order,
@@ -171,19 +169,18 @@ impl FlexItem {
     /// pass so that the item has already been layouted.
     pub fn init_sizes(&mut self, containing_length: Au, mode: Mode) {
         let block = self.flow.as_block();
-        let style = block.fragment.style();
         match mode {
             // TODO(stshine): the definition of min-{width, height} in style component
             // should change to LengthOrPercentageOrAuto for automatic implied minimal size.
             // https://drafts.csswg.org/css-flexbox-1/#min-size-auto
             Mode::Inline => {
-                let basis = from_flex_basis(style.get_position().flex_basis,
-                                            style.content_inline_size(),
+                let basis = from_flex_basis(self.style.get_position().flex_basis,
+                                            self.style.content_inline_size(),
                                             Some(containing_length));
 
-                let adjust_size = match style.get_position().box_sizing {
+                let adjust_size = match self.style.get_position().box_sizing {
                     box_sizing::T::border_box => {
-                        let margin = style.logical_margin();
+                        let margin = self.style.logical_margin();
                         (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
                          MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
                     }
@@ -191,20 +188,20 @@ impl FlexItem {
                 };
                 let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
                 self.base_size = basis.specified_or_default(content_size);
-                self.max_size = specified_or_none(style.max_inline_size(), containing_length).unwrap_or(MAX_AU);
-                self.min_size = specified(style.min_inline_size(), containing_length);
+                self.max_size = specified_or_none(self.style.max_inline_size(), containing_length).unwrap_or(MAX_AU);
+                self.min_size = specified(self.style.min_inline_size(), containing_length);
             },
             Mode::Block => {
-                let basis = from_flex_basis(style.get_position().flex_basis,
-                                            style.content_block_size(), Some(containing_length));
-                let content_size = match style.get_position().box_sizing {
+                let basis = from_flex_basis(self.style.get_position().flex_basis,
+                                            self.style.content_block_size(), Some(containing_length));
+                let content_size = match self.style.get_position().box_sizing {
                     box_sizing::T::border_box => block.fragment.border_box.size.block,
                     box_sizing::T::content_box => block.fragment.border_box.size.block -
                         block.fragment.border_padding.block_start_end(),
                 };
                 self.base_size = basis.specified_or_default(content_size);
-                self.max_size = specified_or_none(style.max_block_size(), containing_length).unwrap_or(MAX_AU);
-                self.min_size = specified(style.min_block_size(), containing_length);
+                self.max_size = specified_or_none(self.style.max_block_size(), containing_length).unwrap_or(MAX_AU);
+                self.min_size = specified(self.style.min_block_size(), containing_length);
             }
         }
     }
@@ -219,14 +216,14 @@ impl FlexItem {
                 fragment.compute_border_and_padding(containing_length, border_collapse::T::separate);
                 fragment.compute_inline_direction_margins(containing_length);
                 fragment.compute_block_direction_margins(containing_length);
-                adjustment = match fragment.style().get_position().box_sizing {
+                adjustment = match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
                     box_sizing::T::border_box => fragment.margin.inline_start_end()
                 };
             },
             Mode::Block => {
-                adjustment = match fragment.style().get_position().box_sizing {
+                adjustment = match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.block_start_end() + fragment.margin.block_start_end(),
                     box_sizing::T::border_box => fragment.margin.block_start_end()
@@ -237,9 +234,7 @@ impl FlexItem {
     }
 
     pub fn auto_margin_num(&self, mode: Mode) -> i32 {
-        // FIXME(stshine): even a simple helper method like this involves a vtable lookup.
-        // How to make it better?
-        let margin = self.flow.as_block().fragment.style().logical_margin();
+        let margin = self.style.logical_margin();
         let mut margin_count = 0;
         match mode {
             Mode::Inline => {
