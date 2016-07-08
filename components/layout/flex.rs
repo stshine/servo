@@ -217,7 +217,7 @@ impl FlexItem {
 
     /// Return the outer main size of the item, including paddings and margins,
     /// clamped by max and min size.
-    pub fn outer_main_size(&mut self, mode: Mode) -> Au {
+    pub fn outer_main_size(&self, mode: Mode) -> Au {
         let ref fragment = self.flow.as_block().fragment;
         let adjustment;
         match mode {
@@ -225,14 +225,16 @@ impl FlexItem {
                 adjustment = match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
-                    box_sizing::T::border_box => fragment.margin.inline_start_end()
+                    box_sizing::T::border_box =>
+                        fragment.margin.inline_start_end()
                 };
             },
             Mode::Block => {
                 adjustment = match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.block_start_end() + fragment.margin.block_start_end(),
-                    box_sizing::T::border_box => fragment.margin.block_start_end()
+                    box_sizing::T::border_box =>
+                        fragment.margin.block_start_end()
                 };
             }
         }
