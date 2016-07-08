@@ -420,7 +420,7 @@ impl FlexFlow {
         let items = &mut self.items[start..];
         for mut item in items.iter_mut() {
             item.init_sizes(container_size, self.main_mode);
-            let outer_main_size = item.outer_main_size(container_size, self.main_mode);
+            let outer_main_size = item.outer_main_size(self.main_mode);
             if total_line_size + outer_main_size > container_size && end != start  && self.is_wrappable {
                 break;
             }
