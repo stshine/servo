@@ -168,7 +168,7 @@ impl FlexItem {
     /// For block mode container this method should be called in assign_block_size()
     /// pass so that the item has already been layouted.
     pub fn init_sizes(&mut self, containing_length: Au, mode: Mode) {
-        let block = self.flow.as_block();
+        let block = flow_ref::deref_mut(&mut self.flow).as_mut_block();
         match mode {
             // TODO(stshine): the definition of min-{width, height} in style component
             // should change to LengthOrPercentageOrAuto for automatic implied minimal size.
@@ -177,6 +177,12 @@ impl FlexItem {
                 let basis = from_flex_basis(self.style.get_position().flex_basis,
                                             self.style.content_inline_size(),
                                             Some(containing_length));
+
+                // These methods compute auto margins to zero length, which is exactly what we want.
+                block.fragment.compute_border_and_padding(containing_length,
+                                                          border_collapse::T::separate);
+                block.fragment.compute_inline_direction_margins(containing_length);
+                block.fragment.compute_block_direction_margins(containing_length);
 
                 let adjust_size = match self.style.get_position().box_sizing {
                     box_sizing::T::border_box => {
@@ -188,34 +194,34 @@ impl FlexItem {
                 };
                 let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
                 self.base_size = basis.specified_or_default(content_size);
-                self.max_size = specified_or_none(self.style.max_inline_size(), containing_length).unwrap_or(MAX_AU);
+                self.max_size = specified_or_none(self.style.max_inline_size(), containing_length)
+                    .unwrap_or(MAX_AU);
                 self.min_size = specified(self.style.min_inline_size(), containing_length);
             },
             Mode::Block => {
                 let basis = from_flex_basis(self.style.get_position().flex_basis,
-                                            self.style.content_block_size(), Some(containing_length));
+                                            self.style.content_block_size(),
+                                            Some(containing_length));
                 let content_size = match self.style.get_position().box_sizing {
                     box_sizing::T::border_box => block.fragment.border_box.size.block,
                     box_sizing::T::content_box => block.fragment.border_box.size.block -
                         block.fragment.border_padding.block_start_end(),
                 };
                 self.base_size = basis.specified_or_default(content_size);
-                self.max_size = specified_or_none(self.style.max_block_size(), containing_length).unwrap_or(MAX_AU);
+                self.max_size = specified_or_none(self.style.max_block_size(), containing_length)
+                    .unwrap_or(MAX_AU);
                 self.min_size = specified(self.style.min_block_size(), containing_length);
             }
         }
     }
 
-    /// Return the outer main size of the item, including paddings and margins.
-    pub fn outer_main_size(&mut self, containing_length: Au, mode: Mode) -> Au {
-        let ref mut fragment = flow_ref::deref_mut(&mut self.flow).as_mut_block().fragment;
+    /// Return the outer main size of the item, including paddings and margins,
+    /// clamped by max and min size.
+    pub fn outer_main_size(&mut self, mode: Mode) -> Au {
+        let ref fragment = self.flow.as_block().fragment;
         let adjustment;
         match mode {
             Mode::Inline => {
-                // These methods compute auto margins to zero length, which is exactly what we want.
-                fragment.compute_border_and_padding(containing_length, border_collapse::T::separate);
-                fragment.compute_inline_direction_margins(containing_length);
-                fragment.compute_block_direction_margins(containing_length);
                 adjustment = match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
