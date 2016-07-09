@@ -1974,6 +1974,9 @@ pub fn cascade<C: ComputedValues>(
 }
 
 pub fn modify_style_for_anonymous_block(style: &mut Arc<ServoComputedValues>) {
+// The 'align-self' property needs some special treatment since
+// its value depends on the 'alignt-item' value of its parent.
+% if "align-items" in data.longhands_by_name:
     use computed_values::align_self::T as align_self;
     use computed_values::align_items::T as align_items;
     let self_align =
@@ -1984,6 +1987,7 @@ pub fn modify_style_for_anonymous_block(style: &mut Arc<ServoComputedValues>) {
             align_items::flex_end => align_self::flex_end,
             align_items::center => align_self::center,
         };
+% endif
     let inital_values = &*INITIAL_SERVO_VALUES;
     let mut style = Arc::make_mut(style);
     % for style_struct in data.active_style_structs():
@@ -1991,7 +1995,9 @@ pub fn modify_style_for_anonymous_block(style: &mut Arc<ServoComputedValues>) {
     style.${style_struct.ident} = inital_values.clone_${style_struct.trait_name_lower}();
     % endif
     % endfor
-    Arc::make_mut(&mut style.position).align_self = self_align;
+% if "align-items" in data.longhands_by_name:
+   Arc::make_mut(&mut style.position).align_self = self_align;
+% endif
 }
 
 /// Alters the given style to accommodate replaced content. This is called in flow construction. It
