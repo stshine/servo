@@ -1876,7 +1876,8 @@ pub fn cascade<C: ComputedValues>(
         longhands::position::SpecifiedValue::absolute |
         longhands::position::SpecifiedValue::fixed);
     let floated = style.get_box().clone_float() != longhands::float::SpecifiedValue::none;
-    let is_flex_item = context.inherited_style.get_box().clone_display() == computed_values::display::T::flex;
+    let is_flex_item =
+        context.inherited_style.get_box().clone_display() == computed_values::display::T::flex;
     if positioned || floated || is_root_element || is_flex_item {
         use computed_values::display::T;
 
