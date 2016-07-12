@@ -289,7 +289,7 @@ impl FlexLine {
         let mut total_grow = 0.0;
         let mut total_shrink = 0.0;
         let mut total_scaled = 0.0;
-        let mut active_num = 0;
+        let mut active_count = 0;
         for item in items.iter_mut().filter(|i| !(i.is_strut && collapse)) {
             item.main_size = max(item.min_size, min(item.base_size, item.max_size));
             if item.main_size != item.base_size
@@ -301,13 +301,13 @@ impl FlexLine {
                     total_grow += item.flex_grow;
                     total_shrink += item.flex_shrink;
                     total_scaled += item.flex_shrink * item.base_size.0 as f32;
-                    active_num += 1;
+                    active_count += 1;
                 }
         }
 
         let initial_free_space = self.free_space;
         let mut total_variation = Au(1);
-        while total_variation != Au(0) && self.free_space != Au(0) && active_num > 0 {
+        while total_variation != Au(0) && self.free_space != Au(0) && active_count > 0 {
             self.free_space =
                 if self.free_space > Au(0) {
                     min(initial_free_space.scale_by(total_grow), self.free_space)
@@ -327,7 +327,7 @@ impl FlexLine {
                     total_variation += end_size - item.main_size;
                     item.main_size = end_size;
                     item.is_freezed = true;
-                    active_num -= 1;
+                    active_count -= 1;
                     total_shrink -= item.flex_shrink;
                     total_grow -= item.flex_grow;
                     total_scaled -= item.flex_shrink * item.base_size.0 as f32;
