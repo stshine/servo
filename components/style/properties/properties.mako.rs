@@ -1977,7 +1977,7 @@ pub fn cascade<C: ComputedValues>(
 pub fn modify_style_for_anonymous_flow(style: &mut Arc<ServoComputedValues>,
                                       new_display_value: longhands::display::computed_value::T) {
     // The 'align-self' property needs some special treatment since
-    // its value depends on the 'alignt-item' value of its parent.
+    // its value depends on the 'align-items' value of its parent.
     % if "align-items" in data.longhands_by_name:
         use computed_values::align_self::T as align_self;
         use computed_values::align_items::T as align_items;
