@@ -391,7 +391,7 @@ impl FlexFlow {
             };
             is_wrappable = wrappable;
             cross_reverse =
-                reverse == (style.writing_mode.is_vertical() && style.writing_mode.is_vertical_lr());
+                reverse != (style.writing_mode.is_vertical() && !style.writing_mode.is_vertical_lr());
         }
         FlexFlow {
             block_flow: BlockFlow::from_fragment(fragment, flotation),
