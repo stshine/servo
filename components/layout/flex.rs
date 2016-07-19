@@ -184,15 +184,13 @@ impl FlexItem {
                 block.fragment.compute_inline_direction_margins(containing_length);
                 block.fragment.compute_block_direction_margins(containing_length);
 
-                let adjust_size = match self.style.get_position().box_sizing {
-                    box_sizing::T::border_box => {
-                        let margin = self.style.logical_margin();
-                        (MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
-                         MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero())
-                    }
-                    box_sizing::T::content_box => block.fragment.surrounding_intrinsic_inline_size(),
+                let adjustment = match self.style.get_position().box_sizing {
+                    box_sizing::T::content_box => Au(0),
+                    box_sizing::T::border_box =>
+                        block.fragment.border_padding.inline_start_end()
                 };
-                let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size - adjust_size;
+                let content_size = block.base.intrinsic_inline_sizes.preferred_inline_size
+                    - block.fragment.surrounding_intrinsic_inline_size() + adjustment;
                 self.base_size = basis.specified_or_default(content_size);
                 self.max_size = specified_or_none(self.style.max_inline_size(), containing_length)
                     .unwrap_or(MAX_AU);
