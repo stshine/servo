@@ -263,12 +263,17 @@ impl FlexItem {
     }
 }
 
-// TODO(stshine): More fields may be required to handle collapsed items and baseline alignment.
+/// A line in a flex container.
+// TODO(stshine): More fields are required to handle collapsed items and baseline alignment.
 #[derive(Debug)]
 struct FlexLine {
+    /// Range of items belong to this line in 'self.items'.
     pub range: Range<usize>,
+    /// Remainig free space of this line, items will grow or shrink based on it being positive or negative.
     pub free_space: Au,
+    /// the number of auto margins of items.
     pub auto_margin_count: i32,
+    /// Line size in the block direction.
     pub cross_size: Au,
 }
 
@@ -282,11 +287,18 @@ impl FlexLine {
         }
     }
 
+    /// This method implements the flexible lengths resolving algorithm.
+    /// The 'collapse' parameter is used to indicate whether items with 'visibility: hidden'
+    /// is included in length resolving. The result main size is stored in 'item.main_size'.
+    /// https://drafts.csswg.org/css-flexbox/#resolve-flexible-lengths
     pub fn flex_resolve(&mut self, items: &mut [FlexItem], collapse: bool) {
         let mut total_grow = 0.0;
         let mut total_shrink = 0.0;
         let mut total_scaled = 0.0;
         let mut active_count = 0;
+        // Iterate through items, collect total factors and freeze those that have already met
+        // their constraints or won't grow/shrink in corresponding scenario.
+        // https://drafts.csswg.org/css-flexbox/#resolve-flexible-lengths
         for item in items.iter_mut().filter(|i| !(i.is_strut && collapse)) {
             item.main_size = max(item.min_size, min(item.base_size, item.max_size));
             if item.main_size != item.base_size
@@ -297,6 +309,7 @@ impl FlexLine {
                     item.is_frozen = false;
                     total_grow += item.flex_grow;
                     total_shrink += item.flex_shrink;
+                    // The scaled factor is used to calculate flex shrink
                     total_scaled += item.flex_shrink * item.base_size.0 as f32;
                     active_count += 1;
                 }
@@ -304,8 +317,10 @@ impl FlexLine {
 
         let initial_free_space = self.free_space;
         let mut total_variation = Au(1);
+        // If there is no remaining free space or all items are frozen, stop loop.
         while total_variation != Au(0) && self.free_space != Au(0) && active_count > 0 {
             self.free_space =
+                // https://drafts.csswg.org/css-flexbox/#remaining-free-space
                 if self.free_space > Au(0) {
                     min(initial_free_space.scale_by(total_grow), self.free_space)
                 } else {
@@ -314,6 +329,7 @@ impl FlexLine {
 
             total_variation = Au(0);
             for item in items.iter_mut().filter(|i| !i.is_frozen).filter(|i| !(i.is_strut && collapse)) {
+                // Use this and the 'abs()' below to make the code work in both grow and shrink scenarios.
                 let (factor, end_size) = if self.free_space > Au(0) {
                     (item.flex_grow / total_grow, item.max_size)
                 } else {
@@ -321,6 +337,7 @@ impl FlexLine {
                 };
                 let variation = self.free_space.scale_by(factor);
                 if variation.0.abs() > (end_size - item.main_size).0.abs() {
+                    // Use constraint as the target main size, and freeze item.
                     total_variation += end_size - item.main_size;
                     item.main_size = end_size;
                     item.is_frozen = true;
