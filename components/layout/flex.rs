@@ -112,7 +112,7 @@ fn from_flex_basis(flex_basis: LengthOrPercentageOrAutoOrContent,
     }
 }
 
-/// Represent a child in a flex container. Most fields here are used in
+/// Represents a child in a flex container. Most fields here are used in
 /// flex size resolving, and items are sorted by the 'order' property.
 #[derive(Debug)]
 struct FlexItem {
@@ -219,25 +219,24 @@ impl FlexItem {
     /// clamped by max and min size.
     pub fn outer_main_size(&self, mode: Mode) -> Au {
         let ref fragment = self.flow.as_block().fragment;
-        let adjustment;
-        match mode {
+        let adjustment = match mode {
             Mode::Inline => {
-                adjustment = match self.style.get_position().box_sizing {
+                match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end(),
                     box_sizing::T::border_box =>
                         fragment.margin.inline_start_end()
-                };
+                }
             },
             Mode::Block => {
-                adjustment = match self.style.get_position().box_sizing {
+                match self.style.get_position().box_sizing {
                     box_sizing::T::content_box =>
                         fragment.border_padding.block_start_end() + fragment.margin.block_start_end(),
                     box_sizing::T::border_box =>
                         fragment.margin.block_start_end()
-                };
+                }
             }
-        }
+        };
         max(self.min_size, min(self.base_size, self.max_size)) + adjustment
     }
 
