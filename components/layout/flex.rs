@@ -403,6 +403,13 @@ impl FlexFlow {
         }
     }
 
+    /// Returns a line start after the last item that is already in a line.
+    /// Note that when the container main size is infinite(i.e. A column flexbox with auto height),
+    /// we do not need to do flex resolving and it can be considered as a fast-path, so the
+    /// 'container_size' param does not need to be 'None'. A line has to container at least an item;
+    /// (expect this) if the container is multi-line the sum of outer main size of items should be
+    /// less than the container size; a line should be filled by items as much as possible.
+    /// After been collected in a line a item should have its main sizes initialized.
     fn get_flex_line(&mut self, container_size: Au) -> Option<FlexLine> {
         let start = if self.lines.len() == 0 {
             0
