@@ -136,7 +136,7 @@ struct FlexItem {
     /// The 'order' property of this item.
     pub order: i32,
     /// Whether the main size has met its constraint.
-    pub is_freezed: bool,
+    pub is_frozen: bool,
     /// True if this flow has property 'visibility::collapse'.
     pub is_strut: bool
 }
@@ -159,7 +159,7 @@ impl FlexItem {
             flex_grow: flex_grow,
             flex_shrink: flex_shrink,
             order: order,
-            is_freezed: false,
+            is_frozen: false,
             is_strut: false
         }
     }
@@ -295,9 +295,9 @@ impl FlexLine {
             if item.main_size != item.base_size
                 || (self.free_space > Au(0) && item.flex_grow == 0.0)
                 || (self.free_space < Au(0) && item.flex_shrink == 0.0) {
-                    item.is_freezed = true;
+                    item.is_frozen = true;
                 } else {
-                    item.is_freezed = false;
+                    item.is_frozen = false;
                     total_grow += item.flex_grow;
                     total_shrink += item.flex_shrink;
                     total_scaled += item.flex_shrink * item.base_size.0 as f32;
@@ -316,7 +316,7 @@ impl FlexLine {
                 };
 
             total_variation = Au(0);
-            for item in items.iter_mut().filter(|i| !i.is_freezed).filter(|i| !(i.is_strut && collapse)) {
+            for item in items.iter_mut().filter(|i| !i.is_frozen).filter(|i| !(i.is_strut && collapse)) {
                 let (factor, end_size) = if self.free_space > Au(0) {
                     (item.flex_grow / total_grow, item.max_size)
                 } else {
@@ -326,7 +326,7 @@ impl FlexLine {
                 if variation.0.abs() > (end_size - item.main_size).0.abs() {
                     total_variation += end_size - item.main_size;
                     item.main_size = end_size;
-                    item.is_freezed = true;
+                    item.is_frozen = true;
                     active_count -= 1;
                     total_shrink -= item.flex_shrink;
                     total_grow -= item.flex_grow;
