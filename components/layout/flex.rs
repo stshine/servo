@@ -372,7 +372,7 @@ pub struct FlexFlow {
     /// List of flex-items that belong to this flex-container
     items: Vec<FlexItem>,
     /// True if the flex-direction is *-reversed
-    main_reversed: bool,
+    main_reverse: bool,
     /// True if this flex container can be multiline.
     is_wrappable: bool,
     /// True if the cross direction is reversed.
@@ -384,7 +384,7 @@ impl FlexFlow {
                          flotation: Option<FloatKind>)
                          -> FlexFlow {
         let main_mode;
-        let main_reversed;
+        let main_reverse;
         let is_wrappable;
         let cross_reverse;
         {
@@ -396,7 +396,7 @@ impl FlexFlow {
                 flex_direction::T::column_reverse => (Mode::Block, true),
             };
             main_mode = mode;
-            main_reversed =
+            main_reverse =
                 reverse == style.writing_mode.is_bidi_ltr();
             let (wrappable, reverse) = match fragment.style.get_position().flex_wrap {
                 flex_wrap::T::nowrap              => (false, false),
@@ -414,7 +414,7 @@ impl FlexFlow {
             available_cross_size: AxisSize::Infinite,
             lines: Vec::new(),
             items: Vec::new(),
-            main_reversed: main_reversed,
+            main_reverse: main_reverse,
             is_wrappable: is_wrappable,
             cross_reverse: cross_reverse
         }
@@ -645,7 +645,7 @@ impl FlexFlow {
                 block.base.block_container_writing_mode = container_mode;
                 let item_outer_size = item_inline_size + block.fragment.border_padding.inline_start_end()
                     + block.fragment.margin.inline_start_end();
-                if !self.main_reversed {
+                if !self.main_reverse {
                     block.base.position.start.i = cur_i;
                 } else {
                     block.base.position.start.i =
@@ -660,14 +660,14 @@ impl FlexFlow {
 
     // TODO(zentner): This function should actually flex elements!
     fn block_mode_assign_block_size<'a>(&mut self, layout_context: &'a LayoutContext<'a>) {
-        let mut cur_b = if !self.main_reversed {
+        let mut cur_b = if !self.main_reverse {
             self.block_flow.fragment.border_padding.block_start
         } else {
             self.block_flow.fragment.border_box.size.block
         };
         for kid in &mut self.items {
             let base = flow::mut_base(flow_ref::deref_mut(&mut kid.flow));
-            if !self.main_reversed {
+            if !self.main_reverse {
                 base.position.start.b = cur_b;
                 cur_b = cur_b + base.position.size.block;
             } else {
