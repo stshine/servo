@@ -404,8 +404,8 @@ impl FlexFlow {
                 flex_wrap::T::wrap_reverse        => (true, true),
             };
             is_wrappable = wrappable;
-            cross_reverse =
-                reverse != (style.writing_mode.is_vertical() && !style.writing_mode.is_vertical_lr());
+            // TODO(stshine): Handle vertical writing mode.
+            cross_reverse = reverse;
         }
         FlexFlow {
             block_flow: BlockFlow::from_fragment(fragment, flotation),
