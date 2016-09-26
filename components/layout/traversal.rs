@@ -156,6 +156,7 @@ impl<'a> PreorderFlowTraversal for AssignISizes<'a> {
     #[inline]
     fn process(&self, flow: &mut Flow) {
         flow.assign_inline_sizes(self.shared_context);
+        //flow::mut_base(flow).restyle_damage.remove(BUBBLE_ISIZES);
     }
 
     #[inline]

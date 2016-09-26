@@ -23,6 +23,7 @@ use layout_debug;
 use model::{Direction, IntrinsicISizes, MaybeAuto, MinMaxConstraint};
 use model::{specified, specified_or_none};
 use script_layout_interface::restyle_damage::{REFLOW, REFLOW_OUT_OF_FLOW};
+use sequential;
 use std::cmp::{max, min};
 use std::ops::Range;
 use std::sync::Arc;
@@ -764,6 +765,15 @@ impl FlexFlow {
                         // FIXME(stshine): item with 'align-self: stretch' and auto cross size should act
                         // as if it has a fixed cross size, all child blocks should resolve against it.
                         // block.assign_block_size(layout_context);
+                        // block.base.restyle_damage.remove(REFLOW_OUT_OF_FLOW | REFLOW);
+                        // block.fragment.restyle_damage.remove(REFLOW_OUT_OF_FLOW | REFLOW);
+                        block.assign_inline_sizes(&layout_context.shared.style_context);
+                        // Re-run layout on our children.
+                        for child in flow::mut_base(block).children.iter_mut() {
+                            sequential::traverse_flow_tree_preorder(child, layout_context.shared);
+                        }
+                        // Assign our final-final block size.
+                        block.assign_block_size(layout_context);                        
                     }
                 block.base.position.start.b = margin_block_start +
                     if !self.cross_reverse {
