@@ -827,6 +827,7 @@ impl BlockFlow {
 
             // At this point, `cur_b` is at the content edge of our box. Now iterate over children.
             let mut floats = self.base.floats.clone();
+            let mut previous_inline_flow: Option<FlowRef> = None;
             let thread_id = self.base.thread_id;
             let (mut had_floated_children, mut had_children_with_clearance) = (false, false);
             for (child_index, kid) in self.base.child_iter_mut().enumerate() {
@@ -880,6 +881,12 @@ impl BlockFlow {
                     let kid_base = flow::mut_base(kid);
                     floats = kid_base.floats.clone();
                     continue
+                }
+
+                if kid.is_inline_flow() {
+                    previous_inline_flow = Some(kid);
+                } else {
+                    previous_inline_flow = None;
                 }
 
                 // If we have clearance, assume there are no floats in.

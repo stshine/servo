@@ -827,6 +827,12 @@ impl InlineFragments {
     }
 }
 
+pub struct InlineFloatCeiling {
+    pub left_inline_size: Au,
+
+    pub right_inline_size: Au,
+}
+
 /// Flows for inline layout.
 #[derive(RustcEncodable)]
 pub struct InlineFlow {
@@ -848,6 +854,8 @@ pub struct InlineFlow {
     /// (because percentages are relative to the containing block, and we aren't in a position to
     /// compute things relative to our parent's containing block).
     pub first_line_indentation: Au,
+
+    pub inline_float_ceiling: InlineFloatCeiling
 }
 
 impl InlineFlow {
