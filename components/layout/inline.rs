@@ -1062,7 +1062,23 @@ impl InlineFlow {
             fragment.update_late_computed_block_position_if_necessary();
         }
     }
-
+    
+    pub fn float_ceiling_for_last_line(&self, info: PlacementInfo) -> Option<Au> {
+        if self.last_line_containing_real_fragments().is_none {
+            return None;
+        }
+        let last_line = self.last_line_containing_real_fragments().unwrap();
+        let ceiling = last_line.bounds.position.b;
+        let floats = self.base.floats;
+        info.extra_inline_size = last_line.bounds.size.inline;
+        let float_b = floats.place_between_floats(info);
+        if float_b < last_line.bounds.position.b + last_line.bounds.size.block {
+            Some(float_b)
+        } else {
+            None
+        }
+    }
+    
     /// Computes the minimum metrics for each line. This is done during flow construction.
     ///
     /// `style` is the style of the block.

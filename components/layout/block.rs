@@ -1115,17 +1115,7 @@ impl BlockFlow {
         })
     }
 
-    /// Add placement information about current float flow for use by the parent.
-    ///
-    /// Also, use information given by parent about other floats to find out our relative position.
-    ///
-    /// This does not give any information about any float descendants because they do not affect
-    /// elements outside of the subtree rooted at this float.
-    ///
-    /// This function is called on a kid flow by a parent. Therefore, `assign_block_size_float` was
-    /// already called on this kid flow by the traversal function. So, the values used are
-    /// well-defined.
-    pub fn place_float(&mut self) {
+    pub fn float_placement_info(&self) -> PlacementInfo {
         let block_size = self.fragment.border_box.size.block;
         let clearance = match self.fragment.clear() {
             None => Au(0),
@@ -1140,7 +1130,7 @@ impl BlockFlow {
         let inline_size_for_float_placement = self.base.position.size.inline +
             min(Au(0), self.fragment.margin.inline_start_end());
 
-        let info = PlacementInfo {
+        PlacementInfo {
             size: LogicalSize::new(
                 self.fragment.style.writing_mode,
                 inline_size_for_float_placement,
@@ -1149,8 +1139,22 @@ impl BlockFlow {
             ceiling: clearance + float_info.float_ceiling,
             max_inline_size: float_info.containing_inline_size,
             kind: float_info.float_kind,
-        };
+        }
+    }
 
+    /// Add placement information about current float flow for use by the parent.
+    ///
+    /// Also, use information given by parent about other floats to find out our relative position.
+    ///
+    /// This does not give any information about any float descendants because they do not affect
+    /// elements outside of the subtree rooted at this float.
+    ///
+    /// This function is called on a kid flow by a parent. Therefore, `assign_block_size_float` was
+    /// already called on this kid flow by the traversal function. So, the values used are
+    /// well-defined.
+    pub fn place_float(&mut self) {
+        let info = self.float_placement_info();
+        
         // Place the float and return the `Floats` back to the parent flow.
         // After, grab the position and use that to set our position.
         self.base.floats.add_float(&info);
