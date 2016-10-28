@@ -89,12 +89,10 @@ impl fmt::Debug for FloatList {
 
 /// All the information necessary to place a float.
 pub struct PlacementInfo {
-    /// The dimensions of the  float.
+    /// The dimensions of the float.
     pub size: LogicalSize<Au>,
     /// The minimum block-start of the float, as determined by earlier elements.
     pub ceiling: Au,
-    
-    pub extra_inline_size: Au;
     /// The maximum inline-end position of the float, generally determined by the containing block.
     pub max_inline_size: Au,
     /// The kind of float.
@@ -166,8 +164,7 @@ impl Floats {
     /// inline-size beyond which floats have no effect. (Generally this is the containing block
     /// inline-size.)
     pub fn available_rect(&self, block_start: Au, block_size: Au, max_x: Au)
-                          -> Opt
-    ion<LogicalRect<Au>> {
+                          -> Option<LogicalRect<Au>> {
         let list = &self.list;
         let block_start = block_start - self.offset.block;
 
@@ -372,7 +369,7 @@ impl Floats {
                             "Non-terminating float placement");
 
                     // Place here if there is enough room
-                    if rect.size.inline >= info.size.inline + info.extra_inline_size {
+                    if rect.size.inline >= info.size.inline {
                         let block_size = self.max_block_size_for_bounds(rect.start.i,
                                                                         rect.start.b,
                                                                         rect.size.inline);

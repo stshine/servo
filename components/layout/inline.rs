@@ -827,12 +827,6 @@ impl InlineFragments {
     }
 }
 
-pub struct InlineFloatCeiling {
-    pub left_inline_size: Au,
-
-    pub right_inline_size: Au,
-}
-
 /// Flows for inline layout.
 #[derive(RustcEncodable)]
 pub struct InlineFlow {
@@ -854,8 +848,6 @@ pub struct InlineFlow {
     /// (because percentages are relative to the containing block, and we aren't in a position to
     /// compute things relative to our parent's containing block).
     pub first_line_indentation: Au,
-
-    pub inline_float_ceiling: InlineFloatCeiling
 }
 
 impl InlineFlow {
@@ -1069,10 +1061,7 @@ impl InlineFlow {
         }
         let last_line = self.last_line_containing_real_fragments().unwrap();
         let ceiling = last_line.bounds.position.b;
-        let floats = self.base.floats;
-        info.extra_inline_size = last_line.bounds.size.inline;
-        let pos = floats.place_between_floats(info);
-        if pos.size.inline > last_line.bounds.size.inline + info.size.inline {
+        if last_line.green_zone.inline >= last_line.bounds.size.inline + info.size.inline {
             last_line.green_zone.inline -= info.size.inline;
             match info.kind {
                 FloatKind::Left if floats.writing_mode.is_ltr() |
