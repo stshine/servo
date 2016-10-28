@@ -1063,16 +1063,27 @@ impl InlineFlow {
         }
     }
     
-    pub fn float_ceiling_for_last_line(&self, info: PlacementInfo) -> Option<Au> {
+    pub fn float_ceiling_for_last_line(&mut self, mut info: PlacementInfo) -> Option<Au> {
         if self.last_line_containing_real_fragments().is_none {
-            return None;
+            return None
         }
         let last_line = self.last_line_containing_real_fragments().unwrap();
         let ceiling = last_line.bounds.position.b;
         let floats = self.base.floats;
         info.extra_inline_size = last_line.bounds.size.inline;
-        let float_b = floats.place_between_floats(info);
-        if float_b < last_line.bounds.position.b + last_line.bounds.size.block {
+        let pos = floats.place_between_floats(info);
+        if pos.size.inline > last_line.bounds.size.inline + info.size.inline {
+            last_line.green_zone.inline -= info.size.inline;
+            match info.kind {
+                FloatKind::Left if floats.writing_mode.is_ltr() |
+                FloatKind::Right if floats.writing_mode.is_rtl() =>
+                    last_line.bounds.position.i += info.size.inline;
+            }
+            InlineFlow::set_inline_fragment_positions(&mut self.fragments,
+                                                      last_line,
+                                                      self.base.flags.text_align(),
+                                                      0,
+                                                      true);
             Some(float_b)
         } else {
             None
