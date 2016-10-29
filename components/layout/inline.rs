@@ -1055,12 +1055,15 @@ impl InlineFlow {
         }
     }
     
-    pub fn float_ceiling_for_last_line(&mut self, mut info: PlacementInfo) -> Option<Au> {
+    pub fn try_place_float_lastline(&mut self, mut float_flow: Flow) -> Option<Floats> {
         if self.last_line_containing_real_fragments().is_none {
             return None
         }
         let last_line = self.last_line_containing_real_fragments().unwrap();
-        let ceiling = last_line.bounds.position.b;
+        let float_block = float_flow.as_mut_block();
+        float_block.float.as_mut().unwrap().float_ceiling = float_block.fragment.margin_box().block_start;
+        float_block.fragment.border_box.position.b = last_line.bounds.start.b;
+        let info = float_block.float_placement_info();
         if last_line.green_zone.inline >= last_line.bounds.size.inline + info.size.inline {
             last_line.green_zone.inline -= info.size.inline;
             match info.kind {
@@ -1073,12 +1076,13 @@ impl InlineFlow {
                                                       self.base.flags.text_align(),
                                                       0,
                                                       true);
-            Some(float_b)
+            float_block.place_float_if_applicable();
+            Some(float_block.floats.clone())
         } else {
             None
         }
     }
-    
+
     /// Computes the minimum metrics for each line. This is done during flow construction.
     ///
     /// `style` is the style of the block.

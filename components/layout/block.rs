@@ -870,16 +870,18 @@ impl BlockFlow {
                 flow::mut_base(kid).floats = floats.clone();
                 if flow::base(kid).flags.is_float() {
                     had_floated_children = true;
+                    if let Some(inline_flow) = previous_inline_flow {
+                        if let Some(t_floats) = inline_flow.try_place_float_lastline(kid) {
+                            floats = t_floats;
+                            continue
+                        } else {
+                            previous_inline_flow = None;
+                        }
+                    }
                     flow::mut_base(kid).position.start.b = cur_b;
                     {
                         let float_ceiling;
                         let kid_block = kid.as_mut_block();
-                        if let Some(inline_flow) = previous_inline_flow {
-                            if let Some(ceiling) =
-                                inline_flow.float_ceiling_for_last_line(kid.float_placement_info()) {
-                                    float_ceiling = ceiling;
-                            }
-                        }
                         float_ceiling = margin_collapse_info.current_float_ceiling();
                         kid_block.float.as_mut().unwrap().float_ceiling = float_ceiling
                     }
