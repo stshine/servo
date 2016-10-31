@@ -1055,29 +1055,31 @@ impl InlineFlow {
         }
     }
     
-    pub fn try_place_float_lastline(&mut self, mut float_flow: Flow) -> Option<Floats> {
-        if self.last_line_containing_real_fragments().is_none {
+    pub fn try_place_float_lastline(&mut self, mut float_flow: &mut Flow) -> Option<Floats> {
+        if self.last_line_containing_real_fragments().is_none() {
             return None
         }
         let last_line = self.last_line_containing_real_fragments().unwrap();
         let float_block = float_flow.as_mut_block();
-        float_block.float.as_mut().unwrap().float_ceiling = float_block.fragment.margin_box().block_start;
-        float_block.fragment.border_box.position.b = last_line.bounds.start.b;
+        float_block.float.as_mut().unwrap().float_ceiling = float_block.fragment.margin.block_start;
+        float_block.base.position.start.b = last_line.bounds.start.b;
         let info = float_block.float_placement_info();
         if last_line.green_zone.inline >= last_line.bounds.size.inline + info.size.inline {
             last_line.green_zone.inline -= info.size.inline;
             match info.kind {
-                FloatKind::Left if floats.writing_mode.is_ltr() |
-                FloatKind::Right if floats.writing_mode.is_rtl() =>
-                    last_line.bounds.position.i += info.size.inline;
+                FloatKind::Left if float_block.base.floats.writing_mode.is_bidi_ltr() =>
+                    last_line.bounds.start.i += info.size.inline,
+                FloatKind::Right if !float_block.base.floats.writing_mode.is_bidi_ltr() =>
+                    last_line.bounds.start.i += info.size.inline,
+                _ => {}
             }
             InlineFlow::set_inline_fragment_positions(&mut self.fragments,
                                                       last_line,
                                                       self.base.flags.text_align(),
-                                                      0,
+                                                      Au(0),
                                                       true);
             float_block.place_float_if_applicable();
-            Some(float_block.floats.clone())
+            Some(float_block.base.floats.clone())
         } else {
             None
         }

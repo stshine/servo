@@ -40,7 +40,7 @@ use flow::{FragmentationContext, MARGINS_CANNOT_COLLAPSE, PreorderFlowTraversal}
 use flow::{ImmutableFlowUtils, LateAbsolutePositionInfo, MutableFlowUtils, OpaqueFlow};
 use flow::IS_ABSOLUTELY_POSITIONED;
 use flow_list::FlowList;
-use flow_ref::FlowRef;
+use flow_ref::{self, FlowRef};
 use fragment::{CoordinateSystem, Fragment, FragmentBorderBoxIterator, Overflow};
 use fragment::SpecificFragmentInfo;
 use gfx::display_list::{ClippingRegion, StackingContext};
@@ -827,7 +827,7 @@ impl BlockFlow {
 
             // At this point, `cur_b` is at the content edge of our box. Now iterate over children.
             let mut floats = self.base.floats.clone();
-            let mut previous_inline_flow: Option<FlowRef> = None;
+            let mut previous_inline_flow: Option<&mut Flow> = None;
             let thread_id = self.base.thread_id;
             let (mut had_floated_children, mut had_children_with_clearance) = (false, false);
             for (child_index, kid) in self.base.child_iter_mut().enumerate() {
@@ -870,12 +870,13 @@ impl BlockFlow {
                 flow::mut_base(kid).floats = floats.clone();
                 if flow::base(kid).flags.is_float() {
                     had_floated_children = true;
-                    if let Some(inline_flow) = previous_inline_flow {
+                    if previous_inline_flow.is_some() {
+                        let mut inline_flow = previous_inline_flow.as_mut().unwrap().as_mut_inline();
                         if let Some(t_floats) = inline_flow.try_place_float_lastline(kid) {
                             floats = t_floats;
                             continue
                         } else {
-                            previous_inline_flow = None;
+                            // previous_inline_flow = None;
                         }
                     }
                     flow::mut_base(kid).position.start.b = cur_b;
@@ -893,7 +894,7 @@ impl BlockFlow {
                 }
 
                 if kid.is_inline_flow() {
-                    previous_inline_flow = Some(kid);
+                    previous_inline_flow = Some(&mut kid);
                 } else {
                     previous_inline_flow = None;
                 }
