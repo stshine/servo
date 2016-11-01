@@ -828,9 +828,10 @@ impl BlockFlow {
 
             // At this point, `cur_b` is at the content edge of our box. Now iterate over children.
             let mut floats = self.base.floats.clone();
-            let mut previous_inline_flow: Option<&'a mut Flow> = None;
             let thread_id = self.base.thread_id;
             let (mut had_floated_children, mut had_children_with_clearance) = (false, false);
+            {
+            let mut previous_inline_flow: Option<&mut Flow> = None;
             for (child_index, kid) in self.base.child_iter_mut().enumerate() {
                 if flow::base(kid).flags.contains(IS_ABSOLUTELY_POSITIONED) {
                     // Assume that the *hypothetical box* for an absolute flow starts immediately
@@ -996,7 +997,8 @@ impl BlockFlow {
                     previous_inline_flow = None;
                 }
             }
-            previous_inline_flow = None;
+                previous_inline_flow = None;
+            }
             // Add in our block-end margin and compute our collapsible margins.
             let can_collapse_block_end_margin_with_kids =
                 margins_may_collapse == MarginsMayCollapseFlag::MarginsMayCollapse &&

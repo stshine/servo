@@ -1056,10 +1056,11 @@ impl InlineFlow {
     }
     
     pub fn try_place_float_lastline(&mut self, mut float_flow: &mut Flow) -> Option<Floats> {
-        if self.last_line_containing_real_fragments().is_none() {
+        let mut last_line_option = self.last_line_containing_real_fragments();
+        if last_line_option.is_none() {
             return None
         }
-        let last_line = self.last_line_containing_real_fragments().unwrap();
+        let mut last_line = last_line_option.as_mut().unwrap();
         let float_block = float_flow.as_mut_block();
         float_block.float.as_mut().unwrap().float_ceiling = float_block.fragment.margin.block_start;
         float_block.base.position.start.b = last_line.bounds.start.b;
