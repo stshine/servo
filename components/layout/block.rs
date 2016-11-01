@@ -46,6 +46,7 @@ use fragment::SpecificFragmentInfo;
 use gfx::display_list::{ClippingRegion, StackingContext};
 use gfx_traits::ScrollRootId;
 use gfx_traits::print_tree::PrintTree;
+use inline::InlineFlow;
 use layout_debug;
 use model::{CollapsibleMargins, IntrinsicISizes, MarginCollapseInfo, MaybeAuto};
 use model::{specified, specified_or_none};
@@ -827,7 +828,7 @@ impl BlockFlow {
 
             // At this point, `cur_b` is at the content edge of our box. Now iterate over children.
             let mut floats = self.base.floats.clone();
-            let mut previous_inline_flow: Option<&mut Flow> = None;
+            let mut previous_inline_flow: Option<&'a mut Flow> = None;
             let thread_id = self.base.thread_id;
             let (mut had_floated_children, mut had_children_with_clearance) = (false, false);
             for (child_index, kid) in self.base.child_iter_mut().enumerate() {
@@ -893,12 +894,6 @@ impl BlockFlow {
                     continue
                 }
 
-                if kid.is_inline_flow() {
-                    previous_inline_flow = Some(&mut kid);
-                } else {
-                    previous_inline_flow = None;
-                }
-
                 // If we have clearance, assume there are no floats in.
                 //
                 // FIXME(#2008, pcwalton): This could be wrong if we have `clear: left` or `clear:
@@ -958,6 +953,7 @@ impl BlockFlow {
                 // Move past the child's border box. Do not use the `translate_including_floats`
                 // function here because the child has already translated floats past its border
                 // box.
+                {
                 let kid_base = flow::mut_base(kid);
                 cur_b = cur_b + kid_base.position.size.block;
 
@@ -993,8 +989,14 @@ impl BlockFlow {
                 // For consecutive collapse-through flows, their top margin should be calculated
                 // from the same baseline.
                 cur_b = cur_b - collapse_delta;
+                }
+                if kid.is_inline_flow() {
+                    previous_inline_flow = Some(kid);
+                } else {
+                    previous_inline_flow = None;
+                }
             }
-
+            previous_inline_flow = None;
             // Add in our block-end margin and compute our collapsible margins.
             let can_collapse_block_end_margin_with_kids =
                 margins_may_collapse == MarginsMayCollapseFlag::MarginsMayCollapse &&
