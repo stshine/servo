@@ -873,12 +873,12 @@ impl BlockFlow {
                 if flow::base(kid).flags.is_float() {
                     had_floated_children = true;
                     if previous_inline_flow.is_some() {
-                        let mut inline_flow = previous_inline_flow.as_mut().unwrap().as_mut_inline();
-                        if let Some(t_floats) = inline_flow.try_place_float_lastline(kid) {
+                        let result = previous_inline_flow.as_mut().unwrap().as_mut_inline().try_place_float_lastline(kid);
+                        if let Some(t_floats) = result {
                             floats = t_floats;
                             continue
                         } else {
-                            // previous_inline_flow = None;
+                            previous_inline_flow = None;
                         }
                     }
                     flow::mut_base(kid).position.start.b = cur_b;
@@ -997,7 +997,6 @@ impl BlockFlow {
                     previous_inline_flow = None;
                 }
             }
-                previous_inline_flow = None;
             }
             // Add in our block-end margin and compute our collapsible margins.
             let can_collapse_block_end_margin_with_kids =
