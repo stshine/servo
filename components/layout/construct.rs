@@ -761,7 +761,7 @@ impl<'a, ConcreteThreadSafeLayoutNode: ThreadSafeLayoutNode>
                         };
                         opt_inline_block_splits.push_back(split);
                         abs_descendants.push_descendants(kid_abs_descendants);
-                    } else {
+                    } else if flow::base(&*flow).flags.contains(IS_ABSOLUTELY_POSITIONED) {
                         // Push the absolutely-positioned kid as an inline containing block.
                         let kid_node = flow.as_block().fragment.node;
                         let kid_pseudo = flow.as_block().fragment.pseudo.clone();
@@ -780,6 +780,21 @@ impl<'a, ConcreteThreadSafeLayoutNode: ThreadSafeLayoutNode>
                         fragment_accumulator.fragments
                                             .absolute_descendants
                                             .push_descendants(kid_abs_descendants);
+                    } else {
+                        let kid_node = flow.as_block().fragment.node;
+                        let kid_pseudo = flow.as_block().fragment.pseudo.clone();
+                        let kid_style = flow.as_block().fragment.style.clone();
+                        let kid_selected_style = flow.as_block().fragment.selected_style.clone();
+                        let kid_restyle_damage = flow.as_block().fragment.restyle_damage;
+                        let fragment_info = SpecificFragmentInfo::InlineFloatCeiling(
+                            InlineFloatCeiling::new(flow));
+                        fragment_accumulator.push(Fragment::from_opaque_node_and_style(
+                            kid_node,
+                            kid_pseudo,
+                            kid_style,
+                            kid_selected_style,
+                            kid_restyle_damage,
+                            fragment_info));
                     }
                 }
                 ConstructionResult::ConstructionItem(ConstructionItem::InlineFragments(

@@ -165,6 +165,8 @@ pub enum SpecificFragmentInfo {
 
     InlineBlock(InlineBlockFragmentInfo),
 
+    InlineFloatCeiling(InlineFloatFragmentInfo),
+    
     /// An inline fragment that establishes an absolute containing block for its descendants (i.e.
     /// a positioned inline fragment).
     InlineAbsolute(InlineAbsoluteFragmentInfo),
@@ -202,6 +204,7 @@ impl SpecificFragmentInfo {
                 SpecificFragmentInfo::InlineAbsoluteHypothetical(ref info) => &info.flow_ref,
                 SpecificFragmentInfo::InlineAbsolute(ref info) => &info.flow_ref,
                 SpecificFragmentInfo::InlineBlock(ref info) => &info.flow_ref,
+                SpecificFragmentInfo::InlineFloatCeiling(ref info) => &info.flow_ref,
             };
 
         flow::base(&**flow).restyle_damage
@@ -219,6 +222,7 @@ impl SpecificFragmentInfo {
                 "SpecificFragmentInfo::InlineAbsoluteHypothetical"
             }
             SpecificFragmentInfo::InlineBlock(_) => "SpecificFragmentInfo::InlineBlock",
+            SpecificFragmentInfo::InlineFloatCeiling(_) => "SpecificFragmentInfo::InlineFloatCeiling",
             SpecificFragmentInfo::ScannedText(_) => "SpecificFragmentInfo::ScannedText",
             SpecificFragmentInfo::Svg(_) => "SpecificFragmentInfo::Svg",
             SpecificFragmentInfo::Table => "SpecificFragmentInfo::Table",
@@ -315,6 +319,23 @@ pub struct InlineAbsoluteFragmentInfo {
 impl InlineAbsoluteFragmentInfo {
     pub fn new(flow_ref: FlowRef) -> InlineAbsoluteFragmentInfo {
         InlineAbsoluteFragmentInfo {
+            flow_ref: flow_ref,
+        }
+    }
+}
+
+/// A fragment that represents an float in a line.
+///
+/// FIXME(pcwalton): Stop leaking this `FlowRef` to layout; that is not memory safe because layout
+/// can clone it.
+#[derive(Clone)]
+pub struct InlineFloatFragment {
+    pub flow_ref: FlowRef,
+}
+
+impl InlineFloatFragment {
+    pub fn new(flow_ref: FlowRef) -> InlineFloatFragment {
+        InlineFloatFragment {
             flow_ref: flow_ref,
         }
     }
@@ -2481,6 +2502,13 @@ impl Fragment {
     /// block size assignment.
     pub fn update_late_computed_replaced_inline_size_if_necessary(&mut self) {
         if let SpecificFragmentInfo::InlineBlock(ref mut inline_block_info) = self.specific {
+            let block_flow = flow_ref::deref_mut(&mut inline_block_info.flow_ref).as_block();
+            let margin = block_flow.fragment.style.logical_margin();
+            self.border_box.size.inline = block_flow.fragment.border_box.size.inline +
+                MaybeAuto::from_style(margin.inline_start, Au(0)).specified_or_zero() +
+                MaybeAuto::from_style(margin.inline_end, Au(0)).specified_or_zero()
+        }
+        if let SpecificFragmentInfo::InlineFloatCeiling(ref mut inline_block_info) = self.specific {
             let block_flow = flow_ref::deref_mut(&mut inline_block_info.flow_ref).as_block();
             let margin = block_flow.fragment.style.logical_margin();
             self.border_box.size.inline = block_flow.fragment.border_box.size.inline +
