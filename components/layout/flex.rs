@@ -181,10 +181,16 @@ impl FlexItem {
                 let basis = from_flex_basis(block.fragment.style.get_position().flex_basis,
                                             block.fragment.style.content_block_size(),
                                             Some(containing_length));
-                let content_size = block.fragment.border_box.size.block
-                    - block.fragment.border_padding.block_start_end()
-                    + block.fragment.box_sizing_boundary(direction);
-                self.base_size = basis.specified_or_default(content_size);
+                self.base_size = match basis {
+                    MaybeAuto::Specified(size) => size,
+                    MaybeAuto::Auto => {
+                        sequential::traverse_flow_tree_preorder(flow, layout_context);
+                        block.fragment.border_box.size.block
+                            - block.fragment.border_padding.block_start_end()
+                            + block.fragment.box_sizing_boundary(direction)
+                    }
+                }
+
                 self.max_size = specified_or_none(block.fragment.style.max_block_size(),
                                                   containing_length).unwrap_or(MAX_AU);
                 self.min_size = specified(block.fragment.style.min_block_size(),
@@ -197,14 +203,8 @@ impl FlexItem {
     /// clamped by max and min size.
     pub fn outer_main_size(&self, flow: &Flow, direction: Direction) -> Au {
         let ref fragment = flow.as_block().fragment;
-        let outer_width = match direction {
-            Direction::Inline => {
-                fragment.border_padding.inline_start_end() + fragment.margin.inline_start_end()
-            }
-            Direction::Block => {
-                fragment.border_padding.block_start_end() + fragment.margin.block_start_end()
-            }
-        };
+        let outer_width =
+            fragment.border_padding.start_end(direction) + fragment.margin.start_end(direction);
         max(self.min_size, min(self.base_size, self.max_size))
             - fragment.box_sizing_boundary(direction) + outer_width
     }
@@ -484,11 +484,8 @@ impl FlexFlow {
         self.block_flow.base.intrinsic_inline_sizes = computation.finish();
     }
 
-    // TODO(zentner): This function needs to be radically different for multi-line flexbox.
-    // Currently, this is the core of BlockFlow::propagate_assigned_inline_size_to_children() with
-    // all float and table logic stripped out.
     fn block_mode_assign_inline_sizes(&mut self,
-                                      _layout_context: &LayoutContext,
+                                      layout_context: &LayoutContext,
                                       inline_start_content_edge: Au,
                                       inline_end_content_edge: Au,
                                       content_inline_size: Au) {
@@ -507,8 +504,27 @@ impl FlexFlow {
             AxisSize::MinMax(ref constraint) => constraint.clamp(content_inline_size),
             AxisSize::Infinite => content_inline_size
         };
+        for child in flow::mut_base(self).children.iter_mut() {
+            let kid_fragment = &child.as_mut_block().fragment;
 
+        }
         let mut children = self.block_flow.base.children.random_access_mut();
+        while let Some(mut line) = self.get_flex_line(content_inline_size) {
+            self.lines.push(line);
+            let items = &mut self.items[line.range.clone()];
+            line.flex_resolve(items, false);
+            for item in items.iter_mut() {
+                let mut block = children.get(item.index).as_mut_block();
+            }
+        }
+
+        self.block_flow
+            .propagate_assigned_inline_size_to_children(layout_context.shared_context(),
+                                                        inline_start_content_edge,
+                                                        inline_end_content_edge,
+                                                        content_inline_size,
+                                                        |_, _, _, _, _, _| {});
+
         for kid in &mut self.items {
             let kid_base = flow::mut_base(children.get(kid.index));
             kid_base.block_container_explicit_block_size = container_block_size;
@@ -648,15 +664,90 @@ impl FlexFlow {
         }
     }
 
-    // TODO(zentner): This function should actually flex elements!
     fn block_mode_assign_block_size(&mut self) {
+        let mut cur_i = Au(0);
         let mut cur_b = if !self.main_reverse {
             self.block_flow.fragment.border_padding.block_start
         } else {
             self.block_flow.fragment.border_box.size.block
         };
 
+        let mut total_cross_size = Au(0);
         let mut children = self.block_flow.base.children.random_access_mut();
+        for line in &mut self.lines {
+            let items = &mut self.items[line.range.clone()];
+            for mut item in items {
+                let mut block = children.get(item.index).as_mut_block();
+                    line.cross_size = max(line.cross_size, block.fragment.border_box.size.inline);
+            }
+            total_cross_size += line.cross_size;
+        }
+        let free_space = self.block_flow.fragment.content_box().size.inline - total_cross_size;
+        if line_align == align_content::T::stretch && free_space > Au(0) {
+            for line in self.lines.iter_mut() {
+                line.cross_size += free_space / line_count;
+            }
+        }
+
+        line_interval = match line_align {
+            align_content::T::space_between => {
+                if line_count == 1 {
+                    Au(0)
+                } else {
+                    free_space / (line_count - 1)
+                }
+            }
+            align_content::T::space_around => {
+                free_space / line_count
+            }
+            _ => Au(0),
+        };
+
+        match line_align {
+            align_content::T::center | align_content::T::space_around => {
+                cur_i += (free_space - line_interval * (line_count - 1)) / 2;
+            }
+            align_content::T::flex_end => {
+                cur_i += free_space;
+            }
+            _ => {}
+        }
+        for line in &mut self.lines {
+            let items = &mut self.items[line.range.clone()];
+
+            let item_count = items.len() as i32;
+            let mut cur_b = inline_start_content_edge;
+            let item_interval = if line.free_space >= Au(0) && line.auto_margin_count == 0 {
+                match self.block_flow.fragment.style().get_position().justify_content {
+                    justify_content::T::space_between => {
+                        if item_count == 1 {
+                            Au(0)
+                        } else {
+                            line.free_space / (item_count - 1)
+                        }
+                    }
+                    justify_content::T::space_around => {
+                    line.free_space / item_count
+                    }
+                    _ => Au(0),
+                }
+            } else {
+                Au(0)
+            };
+            match self.block_flow.fragment.style().get_position().justify_content {
+                // Overflow equally in both ends of line.
+                justify_content::T::center | justify_content::T::space_around => {
+                    cur_i += (line.free_space - item_interval * (item_count - 1)) / 2;
+                }
+                justify_content::T::flex_end => {
+                    cur_i += line.free_space;
+                }
+                _ => {}
+            }
+            for mut item in items {
+                
+            }
+        }
         for item in &mut self.items {
             let mut base = flow::mut_base(children.get(item.index));
             if !self.main_reverse {
