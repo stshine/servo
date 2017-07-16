@@ -29,6 +29,7 @@ use model::{style_length, ToGfxMatrix};
 use msg::constellation_msg::{BrowsingContextId, PipelineId};
 use net_traits::image::base::{Image, ImageMetadata};
 use net_traits::image_cache::{ImageOrMetadataAvailable, UsePlaceholder};
+use num_rational::Rational32;
 use range::*;
 use script_layout_interface::HTMLCanvasData;
 use script_layout_interface::SVGSVGData;
@@ -39,6 +40,7 @@ use std::{f32, fmt};
 use std::borrow::ToOwned;
 use std::cmp::{Ordering, max, min};
 use std::collections::LinkedList;
+use std::ops::{Div, Mul};
 use std::sync::{Arc, Mutex};
 use style::computed_values::{border_collapse, box_sizing, clear, color, display, mix_blend_mode};
 use style::computed_values::{overflow_wrap, overflow_x, position, text_decoration_line, transform};
@@ -996,18 +998,22 @@ impl Fragment {
     }
 
     /// Whether this replace element has intrinsic aspect ratio.
-    pub fn has_intrinsic_ratio(&self) -> bool {
+    pub fn intrinsic_ratio(&self) -> Option<Rational32> {
         match self.specific {
             SpecificFragmentInfo::Image(_)  |
             SpecificFragmentInfo::Canvas(_) |
-            // TODO(stshine): According to the SVG spec, whether a SVG element has intrinsic
-            // aspect ratio is determined by the `preserveAspectRatio` attribute. Since for
-            // now SVG is far from implemented, we simply choose the default behavior that
-            // the intrinsic aspect ratio is preserved.
-            // https://svgwg.org/svg2-draft/coords.html#PreserveAspectRatioAttribute
-            SpecificFragmentInfo::Svg(_) =>
-                self.intrinsic_width() != Au(0) && self.intrinsic_height() != Au(0),
-            _ => false
+            SpecificFragmentInfo::Svg(_) => {
+                let (inline_size, block_size) =
+                    if self.style.writing_mode.is_vertical() {
+                        (self.intrinsic_height(), self.intrinsic_width())
+                    } else {
+                        (self.intrinsic_width(), self.intrinsic_height())
+                    };
+                if inline_size != Au(0) && block_size != Au(0) {
+                    return Some(Rational32::new(block_size.0, inline_size.0))
+                }
+            }
+            _ => return None
         }
     }
 
@@ -1054,12 +1060,11 @@ impl Fragment {
             // dimensions. Otherwise it is taken from the default object size.
             (MaybeAuto::Specified(inline_size), MaybeAuto::Auto) => {
                 let inline_size = inline_constraint.clamp(inline_size);
-                let block_size = if self.has_intrinsic_ratio() {
+                let block_size = if let Some(ratio) = self.intrinsic_ratio() {
                     // Note: We can not precompute the ratio and store it as a float, because
                     // doing so may result one pixel difference in calculation for certain
                     // images, thus make some tests fail.
-                    Au::new((inline_size.0 as i64 * intrinsic_block_size.0 as i64 /
-                        intrinsic_inline_size.0 as i64) as i32)
+                    inline_size * ratio
                 } else {
                     intrinsic_block_size
                 };
@@ -1067,9 +1072,8 @@ impl Fragment {
             }
             (MaybeAuto::Auto, MaybeAuto::Specified(block_size)) => {
                 let block_size = block_constraint.clamp(block_size);
-                let inline_size = if self.has_intrinsic_ratio() {
-                    Au::new((block_size.0 as i64 * intrinsic_inline_size.0 as i64 /
-                       intrinsic_block_size.0 as i64) as i32)
+                let inline_size = if let Some(ratio) = self.intrinsic_ratio() {
+                    block_size / ratio
                 } else {
                     intrinsic_inline_size
                 };
@@ -1077,18 +1081,16 @@ impl Fragment {
             }
             // https://drafts.csswg.org/css2/visudet.html#min-max-widths
             (MaybeAuto::Auto, MaybeAuto::Auto) => {
-                if self.has_intrinsic_ratio() {
+                if let Some(ratio) = self.intrinsic_ratio() {
                     // This approch follows the spirit of cover and contain constraint.
                     // https://drafts.csswg.org/css-images-3/#cover-contain
 
                     // First, create two rectangles that keep aspect ratio while may be clamped
                     // by the contraints;
                     let first_isize = inline_constraint.clamp(intrinsic_inline_size);
-                    let first_bsize = Au::new((first_isize.0 as i64 * intrinsic_block_size.0 as i64 /
-                                          intrinsic_inline_size.0 as i64) as i32);
+                    let first_bsize = first_isize * ratio;
                     let second_bsize = block_constraint.clamp(intrinsic_block_size);
-                    let second_isize = Au::new((second_bsize.0 as i64 * intrinsic_inline_size.0 as i64 /
-                                           intrinsic_block_size.0 as i64) as i32);
+                    let second_isize = second_bsize / ratio;
                     let (inline_size, block_size) = match (first_isize.cmp(&intrinsic_inline_size) ,
                                                            second_isize.cmp(&intrinsic_inline_size)) {
                         (Ordering::Equal, Ordering::Equal) =>
@@ -3207,5 +3209,23 @@ fn create_perspective_matrix(d: Au) -> Transform3D<f32> {
         Transform3D::identity()
     } else {
         Transform3D::create_perspective(d)
+    }
+}
+
+impl Mul<Rational32> for Au {
+    type Output = Au;
+
+    #[inline]
+    fn mul(self, other: Rational32) -> Au {
+        Au::new((Rational32::from_integer(self.0) * other).to_integer())
+    }
+}
+
+impl Div<Rational32> for Au {
+    type Output = Au;
+
+    #[inline]
+    fn div(self, other: Rational32) -> Au {
+        Au::new((Rational32::from_integer(self.0) / other).to_integer())
     }
 }

@@ -26,6 +26,7 @@ extern crate libc;
 extern crate log;
 extern crate msg;
 extern crate net_traits;
+extern crate num_rational;
 extern crate ordered_float;
 extern crate parking_lot;
 extern crate profile_traits;
