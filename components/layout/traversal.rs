@@ -264,12 +264,10 @@ pub struct AssignBSizes<'a> {
 impl<'a> PostorderFlowTraversal for AssignBSizes<'a> {
     #[inline]
     fn process(&self, flow: &mut Flow) {
-        // Can't do anything with anything that floats might flow through until we reach their
-        // inorder parent.
-        //
+        // Can't do anything with flows impacted by floats until we reach their inorder parent.
         // NB: We must return without resetting the restyle bits for these, as we haven't actually
         // reflowed anything!
-        if flow.floats_might_flow_through() {
+        if flow::base(flow).flags.impacted_by_floats() {
             return
         }
 

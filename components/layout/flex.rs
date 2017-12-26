@@ -865,10 +865,25 @@ impl Flow for FlexFlow {
         items.sort_by_key(|item| item.order);
         self.items = items;
 
+        // `flex item`s (our children) cannot be floated. Furthermore, they all establish BFC's.
+        // Therefore, we do not have to handle any floats here.
+
+        let mut flags = self.block_flow.base.flags;
+        flags.remove(HAS_LEFT_FLOATED_DESCENDANTS);
+        flags.remove(HAS_RIGHT_FLOATED_DESCENDANTS);
+
         match self.main_mode {
             Direction::Inline => self.inline_mode_bubble_inline_sizes(),
             Direction::Block  => self.block_mode_bubble_inline_sizes()
         }
+
+        // Although our children can't be floated, we can.
+        match self.block_flow.fragment.style().get_box().float {
+            float::T::none => {}
+            float::T::left => flags.insert(HAS_LEFT_FLOATED_DESCENDANTS),
+            float::T::right => flags.insert(HAS_RIGHT_FLOATED_DESCENDANTS),
+        }
+        self.block_flow.base.flags = flags
     }
 
     fn assign_inline_sizes(&mut self, layout_context: &LayoutContext) {

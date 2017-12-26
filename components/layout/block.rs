@@ -34,6 +34,9 @@ use display_list_builder::{DisplayListBuildState, StackingContextCollectionFlags
 use display_list_builder::StackingContextCollectionState;
 use euclid::{Point2D, Rect, SideOffsets2D, Size2D};
 use floats::{ClearType, FloatKind, Floats, PlacementInfo};
+use flow::{CLEARS_LEFT, CLEARS_RIGHT};
+use flow::{HAS_LEFT_FLOATED_DESCENDANTS, HAS_RIGHT_FLOATED_DESCENDANTS};
+use flow::{IMPACTED_BY_LEFT_FLOATS, IMPACTED_BY_RIGHT_FLOATS, INLINE_POSITION_IS_STATIC};
 use flow::{BaseFlow, EarlyAbsolutePositionInfo, Flow, FlowClass, ForceNonfloatedFlag, GetBaseFlow};
 use flow::{ImmutableFlowUtils, LateAbsolutePositionInfo, OpaqueFlow, FragmentationContext, FlowFlags};
 use flow_list::FlowList;
@@ -486,7 +489,7 @@ pub enum MarginsMayCollapseFlag {
 }
 
 #[derive(PartialEq)]
-pub enum FormattingContextType {
+enum FormattingContextType {
     None,
     Block,
     Other,
@@ -850,7 +853,7 @@ impl BlockFlow {
                     }
                 }
 
-                // Assign block-size now for the child if it might have floats in and we couldn't
+                // Assign block-size now for the child if it was impacted by floats and we couldn't
                 // before.
                 kid.mut_base().floats = floats.clone();
                 if kid.base().flags.is_float() {
@@ -1324,8 +1327,9 @@ impl BlockFlow {
     }
 
     /// Assigns the computed inline-start content edge and inline-size to all the children of this
-    /// block flow. The given `callback`, if supplied, will be called once per child; it is
-    /// currently used to push down column sizes for tables.
+    /// block flow. Also computes whether each child will be impacted by floats. The given
+    /// `callback`, if supplied, will be called once per child; it is currently used to push down
+    /// column sizes for tables.
     ///
     /// `#[inline(always)]` because this is called only from block or table inline-size assignment
     /// and the code for block layout is significantly simpler.
@@ -1342,7 +1346,33 @@ impl BlockFlow {
                                                                         WritingMode,
                                                                         &mut Au,
                                                                         &mut Au) {
+        // Keep track of whether floats could impact each child.
+        let mut inline_start_floats_impact_child =
+            self.base.flags.contains(IMPACTED_BY_LEFT_FLOATS);
+        let mut inline_end_floats_impact_child =
+            self.base.flags.contains(IMPACTED_BY_RIGHT_FLOATS);
+
         let flags = self.base.flags.clone();
+
+        // Remember the inline-sizes of the last left and right floats, if there were any. These
+        // are used for estimating the inline-sizes of block formatting contexts. (We estimate that
+        // the inline-size of any block formatting context that we see will be based on the
+        // inline-size of the containing block as well as the last float seen before it in each
+        // direction.)
+        let mut inline_size_of_preceding_left_floats = Au(0);
+        let mut inline_size_of_preceding_right_floats = Au(0);
+        if self.formatting_context_type() == FormattingContextType::None {
+            if inline_start_content_edge > Au(0) {
+                inline_size_of_preceding_left_floats =
+                    max(self.inline_size_of_preceding_left_floats - inline_start_content_edge,
+                        Au(0));
+            }
+            if inline_end_content_edge > Au(0) {
+                inline_size_of_preceding_right_floats =
+                    max(self.inline_size_of_preceding_right_floats - inline_end_content_edge,
+                        Au(0));
+            }
+        }
 
         let opaque_self = OpaqueFlow::from_flow(self);
 
@@ -1372,6 +1402,29 @@ impl BlockFlow {
         let mut iterator = self.base.child_iter_mut().enumerate().peekable();
         while let Some((i, kid)) = iterator.next() {
             kid.mut_base().block_container_explicit_block_size = explicit_content_size;
+
+            // Determine float impaction, and update the inline size speculations if necessary.
+            if flow::base(kid).flags.contains(CLEARS_LEFT) {
+                inline_start_floats_impact_child = false;
+                inline_size_of_preceding_left_floats = Au(0);
+            }
+            if flow::base(kid).flags.contains(CLEARS_RIGHT) {
+                inline_end_floats_impact_child = false;
+                inline_size_of_preceding_right_floats = Au(0);
+            }
+
+            // Update the speculated inline size if this child is floated.
+            match flow::base(kid).flags.float_kind() {
+                float::T::none => {}
+                float::T::left => {
+                    inline_size_of_preceding_left_floats = inline_size_of_preceding_left_floats +
+                        flow::base(kid).intrinsic_inline_sizes.preferred_inline_size;
+                }
+                float::T::right => {
+                    inline_size_of_preceding_right_floats = inline_size_of_preceding_right_floats +
+                        flow::base(kid).intrinsic_inline_sizes.preferred_inline_size;
+                }
+            }
 
             // The inline-start margin edge of the child flow is at our inline-start content edge,
             // and its inline-size is our content inline-size.
@@ -1403,6 +1456,24 @@ impl BlockFlow {
                 }
                 kid_base.block_container_inline_size = content_inline_size;
                 kid_base.block_container_writing_mode = containing_block_mode;
+            }
+
+            {
+                let kid_base = flow::mut_base(kid);
+                inline_start_floats_impact_child = inline_start_floats_impact_child ||
+                    kid_base.flags.contains(HAS_LEFT_FLOATED_DESCENDANTS);
+                inline_end_floats_impact_child = inline_end_floats_impact_child ||
+                    kid_base.flags.contains(HAS_RIGHT_FLOATED_DESCENDANTS);
+                kid_base.flags.set(IMPACTED_BY_LEFT_FLOATS, inline_start_floats_impact_child);
+                kid_base.flags.set(IMPACTED_BY_RIGHT_FLOATS, inline_end_floats_impact_child);
+            }
+
+            if kid.is_block_flow() {
+                let kid_block = kid.as_mut_block();
+                kid_block.inline_size_of_preceding_left_floats =
+                    inline_size_of_preceding_left_floats;
+                kid_block.inline_size_of_preceding_right_floats =
+                    inline_size_of_preceding_right_floats;
             }
 
             // Call the callback to propagate extra inline size information down to the child. This
@@ -1603,6 +1674,8 @@ impl BlockFlow {
                 }
             }
         }
+        flags.remove(HAS_LEFT_FLOATED_DESCENDANTS);
+        flags.remove(HAS_RIGHT_FLOATED_DESCENDANTS);
 
         // Find the maximum inline-size from children.
         //
@@ -1667,6 +1740,12 @@ impl BlockFlow {
                 preferred_inline_size_of_children_without_text_or_replaced_fragments);
 
         self.base.intrinsic_inline_sizes = computation.finish();
+
+        match self.fragment.style().get_box().float {
+            float::T::none => {}
+            float::T::left => flags.insert(HAS_LEFT_FLOATED_DESCENDANTS),
+            float::T::right => flags.insert(HAS_RIGHT_FLOATED_DESCENDANTS),
+        }
         self.base.flags = flags
     }
 
@@ -1700,7 +1779,32 @@ impl BlockFlow {
         // Now compute the real value.
         self.propagate_and_compute_used_inline_size(shared_context);
 
-        self.guess_inline_size_for_block_formatting_context_if_necessary()
+        // Formatting contexts are never impacted by floats.
+        match self.formatting_context_type() {
+            FormattingContextType::None => {}
+            FormattingContextType::Block => {
+                self.base.flags.remove(IMPACTED_BY_LEFT_FLOATS);
+                self.base.flags.remove(IMPACTED_BY_RIGHT_FLOATS);
+
+                // We can't actually compute the inline-size of this block now, because floats
+                // might affect it. Speculate that its inline-size is equal to the inline-size
+                // computed above minus the inline-size of the previous left and/or right floats.
+                //
+                // (If `max-width` is set, then don't perform this speculation. We guess that the
+                // page set `max-width` in order to avoid hitting floats. The search box on Google
+                // SERPs falls into this category.)
+                if self.fragment.style.max_inline_size() == LengthOrPercentageOrNone::None {
+                    self.fragment.border_box.size.inline =
+                        self.fragment.border_box.size.inline -
+                        self.inline_size_of_preceding_left_floats -
+                        self.inline_size_of_preceding_right_floats;
+                }
+            }
+            FormattingContextType::Other => {
+                self.base.flags.remove(IMPACTED_BY_LEFT_FLOATS);
+                self.base.flags.remove(IMPACTED_BY_RIGHT_FLOATS);
+            }
+        }
     }
 
     /// If this is the root flow, initialize values that would normally be set by the parent.
@@ -1713,40 +1817,11 @@ impl BlockFlow {
             self.base.block_container_inline_size = LogicalSize::from_physical(
                 self.base.writing_mode, shared_context.viewport_size()).inline;
             self.base.block_container_writing_mode = self.base.writing_mode;
-        }
-    }
 
-    fn guess_inline_size_for_block_formatting_context_if_necessary(&mut self) {
-        // We don't need to guess anything unless this is a block formatting context.
-        if self.formatting_context_type() != FormattingContextType::Block {
-            return
+            // The root element is never impacted by floats.
+            self.base.flags.remove(IMPACTED_BY_LEFT_FLOATS);
+            self.base.flags.remove(IMPACTED_BY_RIGHT_FLOATS);
         }
-
-        // If `max-width` is set, then don't perform this speculation. We guess that the
-        // page set `max-width` in order to avoid hitting floats. The search box on Google
-        // SERPs falls into this category.
-        if self.fragment.style.max_inline_size() != LengthOrPercentageOrNone::None {
-            return
-        }
-
-        // At this point, we know we can't precisely compute the inline-size of this block now,
-        // because floats might affect it. Speculate that its inline-size is equal to the
-        // inline-size computed above minus the inline-size of the previous left and/or right
-        // floats.
-        let speculated_left_float_size = if self.fragment.margin.inline_start >= Au(0) &&
-                self.base.speculated_float_placement_in.left > self.fragment.margin.inline_start {
-            self.base.speculated_float_placement_in.left - self.fragment.margin.inline_start
-        } else {
-            Au(0)
-        };
-        let speculated_right_float_size = if self.fragment.margin.inline_end >= Au(0) &&
-                self.base.speculated_float_placement_in.right > self.fragment.margin.inline_end {
-            self.base.speculated_float_placement_in.right - self.fragment.margin.inline_end
-        } else {
-            Au(0)
-        };
-        self.fragment.border_box.size.inline = self.fragment.border_box.size.inline -
-            speculated_left_float_size - speculated_right_float_size
     }
 
     fn definitely_has_zero_block_size(&self) -> bool {
@@ -1878,7 +1953,7 @@ impl Flow for BlockFlow {
             self.assign_inline_position_for_formatting_context(layout_context, content_box);
         }
 
-        if (self as &Flow).floats_might_flow_through() {
+        if self.base.flags.impacted_by_floats() {
             self.base.thread_id = parent_thread_id;
             if self.base.restyle_damage.intersects(ServoRestyleDamage::REFLOW_OUT_OF_FLOW |
                                                    ServoRestyleDamage::REFLOW) {
@@ -1890,7 +1965,7 @@ impl Flow for BlockFlow {
         }
 
         if is_formatting_context {
-            // If this is a formatting context and definitely did not have floats in, then we must
+            // If this is a formatting context and was *not* impacted by floats, then we must
             // translate the floats past us.
             let writing_mode = self.base.floats.writing_mode;
             let delta = self.base.position.size.block;

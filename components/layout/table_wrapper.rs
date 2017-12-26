@@ -22,6 +22,7 @@ use display_list_builder::StackingContextCollectionState;
 use euclid::Point2D;
 use floats::FloatKind;
 use flow::{Flow, FlowClass, ImmutableFlowUtils, FlowFlags, OpaqueFlow};
+use flow::{IMPACTED_BY_LEFT_FLOATS, IMPACTED_BY_RIGHT_FLOATS, INLINE_POSITION_IS_STATIC};
 use fragment::{Fragment, FragmentBorderBoxIterator, Overflow};
 use gfx_traits::print_tree::PrintTree;
 use model::MaybeAuto;
@@ -350,6 +351,11 @@ impl Flow for TableWrapperFlow {
                 percentage: column_intrinsic_inline_size.percentage,
             }
         }).collect::<Vec<_>>();
+
+        // Table wrappers are essentially block formatting contexts and are therefore never
+        // impacted by floats.
+        self.block_flow.base.flags.remove(IMPACTED_BY_LEFT_FLOATS);
+        self.block_flow.base.flags.remove(IMPACTED_BY_RIGHT_FLOATS);
 
         // Our inline-size was set to the inline-size of the containing block by the flow's parent.
         // Now compute the real value.

@@ -26,12 +26,12 @@
 //!   similar methods.
 
 use app_units::Au;
-use block::{BlockFlow, FormattingContextType};
+use block::BlockFlow;
 use context::LayoutContext;
 use display_list_builder::{DisplayListBuildState, StackingContextCollectionState};
 use euclid::{Transform3D, Point2D, Vector2D, Rect, Size2D};
 use flex::FlexFlow;
-use floats::{Floats, SpeculatedFloatPlacement};
+use floats::Floats;
 use flow_list::{FlowList, FlowListIterator, MutFlowListIterator};
 use flow_ref::{FlowRef, WeakFlowRef};
 use fragment::{CoordinateSystem, Fragment, FragmentBorderBoxIterator, Overflow};
@@ -264,8 +264,8 @@ pub trait Flow: HasBaseFlow + fmt::Debug + Sync + Send + 'static {
     fn place_float_if_applicable<'a>(&mut self) {}
 
     /// Assigns block-sizes in-order; or, if this is a float, places the float. The default
-    /// implementation simply assigns block-sizes if this flow might have floats in. Returns true
-    /// if it was determined that this child might have had floats in or false otherwise.
+    /// implementation simply assigns block-sizes if this flow is impacted by floats. Returns true
+    /// if this child was impacted by floats or false otherwise.
     ///
     /// `parent_thread_id` is the thread ID of the parent. This is used for the layout tinting
     /// debug mode; if the block size of this flow was determined by its parent, we should treat
@@ -275,14 +275,13 @@ pub trait Flow: HasBaseFlow + fmt::Debug + Sync + Send + 'static {
                                                         parent_thread_id: u8,
                                                         _content_box: LogicalRect<Au>)
                                                         -> bool {
-        let might_have_floats_in_or_out = self.base().might_have_floats_in() ||
-            self.base().might_have_floats_out();
-        if might_have_floats_in_or_out {
-            self.mut_base().thread_id = parent_thread_id;
+        self.mut_base().thread_id = parent_thread_id;
+            let impacted = base(self).flags.impacted_by_floats();
+            if impacted {
             self.assign_block_size(layout_context);
             self.mut_base().restyle_damage.remove(ServoRestyleDamage::REFLOW_OUT_OF_FLOW | ServoRestyleDamage::REFLOW);
         }
-        might_have_floats_in_or_out
+        impacted
     }
 
     fn get_overflow_in_parent_coordinates(&self) -> Overflow {
@@ -347,6 +346,7 @@ pub trait Flow: HasBaseFlow + fmt::Debug + Sync + Send + 'static {
         overflow
     }
 
+    /// Calculate and set overflow for current flow.
     ///
     /// CSS Section 11.1
     /// This is the union of rectangles of the flows for which we define the
@@ -530,10 +530,6 @@ pub trait ImmutableFlowUtils {
     /// Dumps the flow tree for debugging into the given PrintTree.
     fn print_with_tree(self, print_tree: &mut PrintTree);
 
-    /// Returns true if floats might flow through this flow, as determined by the float placement
-    /// speculation pass.
-    fn floats_might_flow_through(self) -> bool;
-
     fn baseline_offset_of_last_line_box_in_flow(self) -> Option<Au>;
 }
 
@@ -589,9 +585,60 @@ impl FlowClass {
     }
 }
 
+/// A top-down traversal.
+pub trait PreorderFlowTraversal {
+    /// The operation to perform. Return true to continue or false to stop.
+    fn process(&self, flow: &mut Flow);
+
+    /// Returns true if this node must be processed in-order. If this returns false,
+    /// we skip the operation for this node, but continue processing the descendants.
+    /// This is called *after* parent nodes are visited.
+    fn should_process(&self, _flow: &mut Flow) -> bool {
+        true
+    }
+}
+
+/// A bottom-up traversal, with a optional in-order pass.
+pub trait PostorderFlowTraversal {
+    /// The operation to perform. Return true to continue or false to stop.
+    fn process(&self, flow: &mut Flow);
+
+    /// Returns false if this node must be processed in-order. If this returns false, we skip the
+    /// operation for this node, but continue processing the ancestors. This is called *after*
+    /// child nodes are visited.
+    fn should_process(&self, _flow: &mut Flow) -> bool {
+        true
+    }
+}
+
+/// An in-order (sequential only) traversal.
+pub trait InorderFlowTraversal {
+    /// The operation to perform. Returns the level of the tree we're at.
+    fn process(&mut self, flow: &mut Flow, level: u32);
+
+    /// Returns true if this node should be processed and false if neither this node nor its
+    /// descendants should be processed.
+    fn should_process(&mut self, flow: &mut Flow) -> bool;
+}
+
 bitflags! {
     #[doc = "Flags used in flows."]
-    pub struct FlowFlags: u32 {
+    flags FlowFlags: u32 {
+        // floated descendants flags
+        #[doc = "Whether this flow has descendants that float left in the same block formatting"]
+        #[doc = "context."]
+        const HAS_LEFT_FLOATED_DESCENDANTS = 0b0000_0000_0000_0000_0001,
+        #[doc = "Whether this flow has descendants that float right in the same block formatting"]
+        #[doc = "context."]
+        const HAS_RIGHT_FLOATED_DESCENDANTS = 0b0000_0000_0000_0000_0010,
+        #[doc = "Whether this flow is impacted by floats to the left in the same block formatting"]
+        #[doc = "context (i.e. its height depends on some prior flows with `float: left`)."]
+        const IMPACTED_BY_LEFT_FLOATS = 0b0000_0000_0000_0000_0100,
+        #[doc = "Whether this flow is impacted by floats to the right in the same block"]
+        #[doc = "formatting context (i.e. its height depends on some prior flows with `float:"]
+        #[doc = "right`)."]
+        const IMPACTED_BY_RIGHT_FLOATS = 0b0000_0000_0000_0000_1000,
+
         // text align flags
         #[doc = "Whether this flow is absolutely positioned. This is checked all over layout, so a"]
         #[doc = "virtual call is too expensive."]
@@ -655,6 +702,25 @@ impl FlowFlags {
     pub fn set_text_align(&mut self, value: TextAlign) {
         *self = (*self & !FlowFlags::TEXT_ALIGN) |
                 FlowFlags::from_bits((value as u32) << TEXT_ALIGN_SHIFT).unwrap();
+    }
+
+    #[inline]
+    pub fn union_floated_descendants_flags(&mut self, other: FlowFlags) {
+        self.insert(other & HAS_FLOATED_DESCENDANTS_BITMASK);
+    }
+
+    #[inline]
+    pub fn impacted_by_floats(&self) -> bool {
+        self.contains(IMPACTED_BY_LEFT_FLOATS) || self.contains(IMPACTED_BY_RIGHT_FLOATS)
+    }
+
+    #[inline]
+    pub fn set(&mut self, flags: FlowFlags, value: bool) {
+        if value {
+            self.insert(flags);
+        } else {
+            self.remove(flags);
+        }
     }
 
     #[inline]
@@ -853,12 +919,6 @@ pub struct BaseFlow {
     /// The floats next to this flow.
     pub floats: Floats,
 
-    /// Metrics for floats in computed during the float metrics speculation phase.
-    pub speculated_float_placement_in: SpeculatedFloatPlacement,
-
-    /// Metrics for floats out computed during the float metrics speculation phase.
-    pub speculated_float_placement_out: SpeculatedFloatPlacement,
-
     /// The collapsible margins for this flow, if any.
     pub collapsible_margins: CollapsibleMargins,
 
@@ -950,10 +1010,6 @@ impl fmt::Debug for BaseFlow {
                 \noverflow={:?}{}{}{}",
                self.stacking_context_id,
                self.position,
-               if self.flags.contains(FlowFlags::FLOATS_LEFT) { "FL" } else { "" },
-               if self.flags.contains(FlowFlags::FLOATS_RIGHT) { "FR" } else { "" },
-               self.speculated_float_placement_in,
-               self.speculated_float_placement_out,
                self.overflow,
                child_count_string,
                absolute_descendants_string,
@@ -1050,8 +1106,6 @@ impl BaseFlow {
             collapsible_margins: CollapsibleMargins::new(),
             stacking_relative_position: Vector2D::zero(),
             abs_descendants: AbsoluteDescendants::new(),
-            speculated_float_placement_in: SpeculatedFloatPlacement::zero(),
-            speculated_float_placement_out: SpeculatedFloatPlacement::zero(),
             block_container_inline_size: Au(0),
             block_container_writing_mode: writing_mode,
             block_container_explicit_block_size: None,
@@ -1129,24 +1183,17 @@ impl BaseFlow {
             kid.collect_stacking_contexts(state);
         }
     }
-
-    #[inline]
-    pub fn might_have_floats_in(&self) -> bool {
-        self.speculated_float_placement_in.left > Au(0) ||
-            self.speculated_float_placement_in.right > Au(0)
-    }
-
-    #[inline]
-    pub fn might_have_floats_out(&self) -> bool {
-        self.speculated_float_placement_out.left > Au(0) ||
-            self.speculated_float_placement_out.right > Au(0)
-    }
 }
 
 impl<'a> ImmutableFlowUtils for &'a Flow {
     /// Returns true if this flow is a block flow or subclass thereof.
     fn is_block_like(self) -> bool {
-        self.class().is_block_like()
+        match self.class() {
+            FlowClass::Block | FlowClass::ListItem | FlowClass::Table | FlowClass::TableRowGroup |
+            FlowClass::TableRow | FlowClass::TableCaption | FlowClass::TableCell |
+            FlowClass::TableWrapper => true,
+            _ => false,
+        }
     }
 
     /// Returns true if this flow is a proper table child.
@@ -1275,19 +1322,6 @@ impl<'a> ImmutableFlowUtils for &'a Flow {
             kid.print_with_tree(print_tree);
         }
         print_tree.end_level();
-    }
-
-    fn floats_might_flow_through(self) -> bool {
-        if !self.base().might_have_floats_in() && !self.base().might_have_floats_out() {
-            return false
-        }
-        if self.is_root() {
-            return false
-        }
-        if !self.is_block_like() {
-            return true
-        }
-        self.as_block().formatting_context_type() == FormattingContextType::None
     }
 
     fn baseline_offset_of_last_line_box_in_flow(self) -> Option<Au> {

@@ -52,7 +52,6 @@ pub enum ProfilerCategory {
     LayoutDamagePropagate = 0x17,
     LayoutGeneratedContent = 0x18,
     LayoutDisplayListSorting = 0x19,
-    LayoutFloatPlacementSpeculation = 0x1a,
     LayoutMain = 0x1b,
     LayoutStoreOverflow = 0x1c,
     LayoutParallelWarmup = 0x1d,
